@@ -3,23 +3,27 @@ using System.Text.Json;
 
 namespace DesktopGlass.App.Windows;
 
-internal sealed record RecoveryRecord(int OwnerPid,long OwnerStart,long ListWindow,int ExplorerPid,long ExplorerStart,bool WasVisible);
+internal sealed record RecoveryRecord(int OwnerPid,long OwnerStart,long ListWindow,int ExplorerPid,long ExplorerStart,bool WasVisible,string LeaseId);
 
 internal sealed class DesktopLease : IDisposable
 {
     private readonly string journal;
     private RecoveryRecord? record;
     private Process? guard;
+    private readonly Mutex desktopMutex=new(false,"Local\\DesktopGlass-desktop-lease");
+    private bool ownsDesktop;
     internal DesktopLease(string directory) { Directory.CreateDirectory(directory); journal=Path.Combine(directory,"recovery.json"); }
     internal nint Parent {get;private set;}
     internal bool Alive => record is not null && (guard is null || !guard.HasExited) && Native.IsWindow((nint)record.ListWindow) && Matches(record);
     internal void Acquire()
     {
+        try{ownsDesktop=desktopMutex.WaitOne(0);}catch(AbandonedMutexException){ownsDesktop=true;}
+        if(!ownsDesktop)throw new InvalidOperationException("已有实例正在管理桌面。");
         Recover(journal);
         var list=Native.DesktopListView(); if(list==0) throw new InvalidOperationException("没有找到兼容的 Windows 桌面视图。");
         Native.GetWindowThreadProcessId(list,out var explorerPid);
         using var owner=Process.GetCurrentProcess(); using var explorer=Process.GetProcessById((int)explorerPid);
-        record=new(owner.Id,owner.StartTime.ToUniversalTime().Ticks,list,(int)explorerPid,explorer.StartTime.ToUniversalTime().Ticks,Native.IsWindowVisible(list));
+        record=new(owner.Id,owner.StartTime.ToUniversalTime().Ticks,list,(int)explorerPid,explorer.StartTime.ToUniversalTime().Ticks,Native.IsWindowVisible(list),Guid.NewGuid().ToString("N"));
         Parent=Native.GetParent(Native.GetParent(list));
         if(Parent==0) throw new InvalidOperationException("桌面宿主不存在。");
         File.WriteAllText(journal,JsonSerializer.Serialize(record));
@@ -47,20 +51,45 @@ internal sealed class DesktopLease : IDisposable
     }
     public void Dispose()
     {
-        if(record is not null) {Restore(record);record=null;}
-        if(File.Exists(journal)) File.Delete(journal);
-        guard?.Dispose(); guard=null;
+        try
+        {
+            if(ownsDesktop && record is not null)
+            {
+                Restore(record);
+                if(File.Exists(journal))
+                {try{if(Read(journal)==record)File.Delete(journal);}catch(JsonException){/* 内存记录足以恢复，损坏日志留待用户检查。 */}}
+            }
+        }
+        finally
+        {
+            record=null;guard?.Dispose();guard=null;
+            if(ownsDesktop){desktopMutex.ReleaseMutex();ownsDesktop=false;}
+            desktopMutex.Dispose();
+        }
     }
     internal static int Watch(string journal,string eventName)
     {
         var r=Read(journal);
-        using var parent=Process.GetProcessById(r.OwnerPid);
+        Process parent;
+        try{parent=Process.GetProcessById(r.OwnerPid);}catch(ArgumentException){RestoreOwned(r,journal);return 0;}
+        using var parentLifetime=parent;
         if(parent.StartTime.ToUniversalTime().Ticks!=r.OwnerStart) return 2;
         using(var ready=EventWaitHandle.OpenExisting(eventName)) ready.Set();
-        parent.WaitForExit(); Restore(r);
-        // 主进程可能已正常恢复并移除记录；不移除新实例拥有的记录。
-        if(File.Exists(journal) && Read(journal)==r) File.Delete(journal);
+        parent.WaitForExit();RestoreOwned(r,journal);
         return 0;
+    }
+    internal static bool RestoreOwned(RecoveryRecord record,string journal)
+    {
+        using var mutex=new Mutex(false,"Local\\DesktopGlass-desktop-lease");var acquired=false;
+        try
+        {
+            try{acquired=mutex.WaitOne();}catch(AbandonedMutexException){acquired=true;}
+            // 跨配置接手时，新租约可能继承隐藏状态；等待其退出再核对旧记录，不能丢弃恢复责任。
+            if(!acquired || !File.Exists(journal))return false;
+            try{if(Read(journal)!=record)return false;}catch(JsonException){Restore(record);return true;}
+            Restore(record);File.Delete(journal);return true;
+        }
+        finally{if(acquired)mutex.ReleaseMutex();}
     }
     internal static void Recover(string journal)
     {
@@ -76,6 +105,8 @@ internal sealed class DesktopLease : IDisposable
         if(!Native.IsWindow((nint)r.ListWindow)) return false;
         Native.GetWindowThreadProcessId((nint)r.ListWindow,out var pid); if(pid!=r.ExplorerPid) return false;
         var name=new StringBuilder(80); Native.GetClassName((nint)r.ListWindow,name,name.Capacity); if(name.ToString()!="SysListView32") return false;
+        var parent=Native.GetParent((nint)r.ListWindow);var parentName=new StringBuilder(80);Native.GetClassName(parent,parentName,parentName.Capacity);
+        if(parentName.ToString()!="SHELLDLL_DefView" || Native.DesktopListView()!=(nint)r.ListWindow)return false;
         try {using var p=Process.GetProcessById(r.ExplorerPid); return p.ProcessName.Equals("explorer",StringComparison.OrdinalIgnoreCase) && p.StartTime.ToUniversalTime().Ticks==r.ExplorerStart;}
         catch(ArgumentException) {return false;}
     }

@@ -16,13 +16,24 @@ internal sealed class DesktopController : IDisposable
     private readonly DispatcherTimer guardTimer;
     private System.Windows.Forms.NotifyIcon? tray;
     private bool stopped;
+    private bool rebuilding;
+    private bool topologyDirty;
+    internal bool CanCommit(bool canceled,bool temporary)=>LayoutEditPolicy.CanCommit(canceled,rebuilding,stopped,Workspace.Locked,temporary);
     internal Workspace Workspace {get;}
     internal DesktopCatalog Catalog {get;}=new();
     internal List<DesktopEntry> Entries {get;private set;}=[];
     internal List<DisplayArea> Displays {get;private set;}=[];
     internal DesktopController(Application app,string dataDirectory)
     {
-        this.app=app;store=new WorkspaceStore(dataDirectory);Workspace=store.Load();lease=new DesktopLease(dataDirectory);
+        this.app=app;
+        Directory.CreateDirectory(dataDirectory);var marker=Path.Combine(dataDirectory,".desktop-glass-owner");
+        if(!File.Exists(marker))
+        {
+            if(Directory.EnumerateFileSystemEntries(dataDirectory).Any())throw new InvalidOperationException("配置目录已有未识别内容，已保留原数据并停止启动。");
+            File.WriteAllText(marker,Installation.ProductId);
+        }
+        Installation.EnsureOwned(dataDirectory);
+        store=new WorkspaceStore(dataDirectory);Workspace=store.Load();lease=new DesktopLease(dataDirectory);
         refreshTimer=new DispatcherTimer{Interval=TimeSpan.FromMilliseconds(450)};refreshTimer.Tick+=(_,_)=>{refreshTimer.Stop();Refresh();};
         guardTimer=new DispatcherTimer{Interval=TimeSpan.FromSeconds(2)};guardTimer.Tick+=(_,_)=>{if(!lease.Alive){MessageBox.Show("Windows 桌面或恢复进程已重建。已退出整理，请重新启动。","Desktop Glass");Exit();}};
     }
@@ -57,6 +68,12 @@ internal sealed class DesktopController : IDisposable
     internal void Refresh()
     {
         if(stopped)return;
+        if(topologyDirty)
+        {
+            topologyDirty=false;
+            try{Displays=Native.Displays();BuildSurfaces();}
+            catch(Exception e){Exit();Report(e);return;}
+        }
         try {Entries=Catalog.Scan();foreach(var path in Workspace.Groups.SelectMany(g=>g.Entries))Track(path);foreach(var surface in surfaces)surface.Render();}
         catch(Exception e){Report(e);}
     }
@@ -72,15 +89,17 @@ internal sealed class DesktopController : IDisposable
     private void QueueRefresh(){refreshTimer.Stop();refreshTimer.Start();}
     private void Dispatch(Action action)=>app.Dispatcher.BeginInvoke(()=>{if(!stopped)action();});
     private void FilesChanged(object sender,FileSystemEventArgs e)=>Dispatch(QueueRefresh);
-    private void DisplayChanged(object? sender,EventArgs e)=>Dispatch(()=>{
-        refreshTimer.Stop();
-        try{Displays=Native.Displays();BuildSurfaces();}catch(Exception ex){Report(ex);Exit();}
-    });
+    private void DisplayChanged(object? sender,EventArgs e)=>Dispatch(()=>{topologyDirty=true;QueueRefresh();});
     private void PowerChanged(object sender,PowerModeChangedEventArgs e){if(e.Mode==PowerModes.Resume)DisplayChanged(sender,EventArgs.Empty);}
     private void BuildSurfaces()
     {
-        foreach(var surface in surfaces)surface.Close();surfaces.Clear();
-        foreach(var display in Displays){var surface=new DesktopSurface(this,display);surfaces.Add(surface);surface.Show();lease.Attach(surface,display);}
+        rebuilding=true;
+        try
+        {
+            foreach(var surface in surfaces)surface.Close();surfaces.Clear();
+            foreach(var display in Displays){var surface=new DesktopSurface(this,display);surface.Closed+=(_,_)=>{if(!rebuilding&&!stopped)Dispatch(Exit);};surfaces.Add(surface);surface.Show();lease.Attach(surface,display);}
+        }
+        finally{rebuilding=false;}
     }
     public void Dispose()
     {

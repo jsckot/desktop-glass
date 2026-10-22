@@ -39,6 +39,7 @@ internal sealed class DesktopSurface : Window
             canvas.Children.Add(card);Canvas.SetLeft(card,(placement.Left-display.Left)/display.Scale);Canvas.SetTop(card,(placement.Top-display.Top)/display.Scale);
         }
         var sidebarWidth=Math.Min(260,Width/3);
+        var missing=display.Primary?controller.Workspace.Groups.Where(g=>LayoutResolver.Resolve(g,controller.Displays).Temporary).ToList():[];
         var side=new StackPanel{Margin=new Thickness(13)};
         side.Children.Add(Glass.Label("未分类",16,true));
         side.Children.Add(new TextBlock{Text="拖入分组即可收纳",FontSize=11,Foreground=new SolidColorBrush(Glass.Ink),Margin=new Thickness(0,5,0,12)});
@@ -46,18 +47,16 @@ internal sealed class DesktopSurface : Window
         var unclassified=controller.Entries.Where(e=>!assigned.Contains(e.Path)).ToList();
         var tray=Tiles(unclassified,null);
         tray.AllowDrop=true;tray.Drop+=(_,e)=>HandleDrop(e,null);
-        side.Children.Add(new ScrollViewer{Content=tray,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Height=Math.Max(100,Height-215)});
+        side.Children.Add(new ScrollViewer{Content=tray,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Height=Math.Max(100,Height-215-(missing.Count>0?285:0))});
+        if(missing.Count>0)
+        {
+            var stack=new StackPanel();stack.Children.Add(new TextBlock{Text="外屏暂离 · 接回后归位",Margin=new Thickness(4,12,4,6),FontWeight=FontWeights.SemiBold,Foreground=new SolidColorBrush(Glass.Ink)});
+            foreach(var group in missing){var card=GroupCard(group,true);card.Height=200;card.Margin=new Thickness(1,4,1,8);stack.Children.Add(card);}
+            side.Children.Add(new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto,Height=280});
+        }
         var sidebar=Glass.Panel(side,null,display,Width-sidebarWidth-28,96,sidebarWidth,Height-124);sidebar.Width=sidebarWidth;sidebar.Height=Math.Max(200,Height-124);
         sidebar.AllowDrop=true;sidebar.Drop+=(_,e)=>HandleDrop(e,null);
         canvas.Children.Add(sidebar);Canvas.SetLeft(sidebar,Width-sidebarWidth-28);Canvas.SetTop(sidebar,96);
-        var missing=controller.Workspace.Groups.Where(g=>LayoutResolver.Resolve(g,controller.Displays).Temporary).ToList();
-        if(missing.Count>0 && display.Primary)
-        {
-            var stack=new StackPanel();stack.Children.Add(new TextBlock{Text="来自未连接显示器 · 接回后自动归位",Margin=new Thickness(12),FontWeight=FontWeights.SemiBold});
-            foreach(var group in missing){var card=GroupCard(group,true);card.Height=220;card.Margin=new Thickness(5);stack.Children.Add(card);}
-            var dock=Glass.Panel(new ScrollViewer{Content=stack,VerticalScrollBarVisibility=ScrollBarVisibility.Auto});dock.Width=360;dock.Height=Math.Min(Height-110,500);
-            canvas.Children.Add(dock);Canvas.SetLeft(dock,Math.Max(20,Width-sidebarWidth-410));Canvas.SetTop(dock,96);
-        }
     }
     private Border GroupCard(Group group,bool temporary)
     {
@@ -79,8 +78,8 @@ internal sealed class DesktopSurface : Window
         card.AllowDrop=true;card.Drop+=(_,e)=>HandleDrop(e,group.Id);
         card.DragOver+=(_,e)=>{e.Effects=e.Data.GetDataPresent(EntryFormat)||e.Data.GetDataPresent(DataFormats.FileDrop)?DragDropEffects.Link:DragDropEffects.None;e.Handled=true;};
         drag.DragDelta+=(_,e)=>{if(controller.Workspace.Locked||temporary)return;Canvas.SetLeft(card,Math.Max(0,Canvas.GetLeft(card)+e.HorizontalChange));Canvas.SetTop(card,Math.Max(76,Canvas.GetTop(card)+e.VerticalChange));};
-        drag.DragCompleted+=(_,_)=>{
-            if(controller.Workspace.Locked||temporary)return;
+        drag.DragCompleted+=(_,e)=>{
+            if(!controller.CanCommit(e.Canceled,temporary))return;
             var cursor=System.Windows.Forms.Cursor.Position;
             var target=controller.Displays.FirstOrDefault(d=>cursor.X>=d.Left && cursor.X<d.Left+d.Width && cursor.Y>=d.Top && cursor.Y<d.Top+d.Height) ?? display;
             if(target.Id!=display.Id){group.DisplayId=target.Id;group.X=Math.Max(0,(cursor.X-target.Left)/target.Scale-60);group.Y=Math.Max(76,(cursor.Y-target.Top)/target.Scale-15);}
@@ -92,7 +91,7 @@ internal sealed class DesktopSurface : Window
             var resize=new Thumb{Width=18,Height=18,HorizontalAlignment=HorizontalAlignment.Right,VerticalAlignment=VerticalAlignment.Bottom,Cursor=Cursors.SizeNWSE,Opacity=.3};
             Grid.SetRowSpan(resize,2);layout.Children.Add(resize);
             resize.DragDelta+=(_,e)=>{if(controller.Workspace.Locked)return;card.Width=Math.Clamp(card.ActualWidth+e.HorizontalChange,240,Math.Min(2000,Width));card.Height=Math.Clamp(card.ActualHeight+e.VerticalChange,160,Math.Min(1600,Height));};
-            resize.DragCompleted+=(_,_)=>{if(controller.Workspace.Locked)return;group.Width=card.Width;group.Height=card.Height;controller.Changed();};
+            resize.DragCompleted+=(_,e)=>{if(!controller.CanCommit(e.Canceled,temporary))return;group.Width=card.Width;group.Height=card.Height;controller.Changed();};
         }
         return card;
     }

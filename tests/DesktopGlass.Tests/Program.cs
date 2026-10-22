@@ -75,5 +75,13 @@ Test("both corrupt copies fail without overwrite", () => {
 Test("invalid persisted data rejected", () => {
     var w=new Workspace(); var g=w.AddGroup("工具","A"); g.Width=-20; Throws<InvalidDataException>(()=>w.Validate());
 });
+Test("canceled or system interrupted layout edits never commit",()=>{
+    True(!LayoutEditPolicy.CanCommit(true,false,false,false,false));
+    True(!LayoutEditPolicy.CanCommit(false,true,false,false,false));
+    True(!LayoutEditPolicy.CanCommit(false,false,true,false,false));
+    True(!LayoutEditPolicy.CanCommit(false,false,false,true,false));
+    True(!LayoutEditPolicy.CanCommit(false,false,false,false,true));
+    True(LayoutEditPolicy.CanCommit(false,false,false,false,false));
+});
 Console.WriteLine($"RESULT {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;
