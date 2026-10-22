@@ -11,6 +11,8 @@ internal static class Program
         // 恢复进程不进入包含 WPF 类型的启动方法，避免为等待父进程加载整个界面框架。
         if(args.Length>=3 && args[0]=="--watch")
         {try{return DesktopLease.Watch(args[1],args[2]);}catch{return 2;}}
+        if(args.Length==3 && args[0]=="--watch-items")
+        {try{return ItemVisibilityLease.Watch(args[1],args[2]);}catch{return 2;}}
         return RunApplication(args);
     }
     [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
@@ -19,6 +21,11 @@ internal static class Program
         try
         {
             if(args.Length==3 && args[0]=="--hold-directory"){Environment.CurrentDirectory=args[1];File.WriteAllText(args[2],"ready");Thread.Sleep(30000);return 0;}
+            if(args.Contains("--native-item-test") || args.Contains("--native-item-crash-child"))return NativeItemDiagnostics.Run(args);
+            if(args.Contains("--cleanup-state-tests"))return UninstallStateDiagnostics.Run(args);
+            if(args.Contains("--controller-tests"))return NativeControllerDiagnostics.Run(args);
+            if(args.Contains("--item-lease-tests") || args.Contains("--item-lease-crash-child"))return ItemLeaseDiagnostics.Run(args);
+            if(args.Contains("--recover-items")){ItemVisibilityLease.RecoverRegistered();ItemVisibilityLease.Recover(Installation.Data);return 0;}
             if(args.Contains("--safety-tests"))return SafetyDiagnostics.Run(args);
             if(args.Contains("--install-test"))return InstallDiagnostics.Run(args);
             if(args.Contains("--uninstall"))
@@ -26,6 +33,7 @@ internal static class Program
                 if(MessageBox.Show("卸载 Desktop Glass？将恢复原生桌面并清理本软件配置，你的文件会保留。","Desktop Glass",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return 0;
                 Installation.Uninstall();return 0;
             }
+            if(args.Contains("--widget-preview") || args.Contains("--widget-host-test")) return WidgetDiagnostics.Run(args);
             if(args.Contains("--ui-test")) return UiDiagnostics.Run(args);
             if(args.Contains("--diagnose") || args.Contains("--smoke") || args.Contains("--crash-test") || args.Contains("--crash-child")) return Diagnostics.Run(args);
             if(!Installation.IsInstalled && !args.Contains("--portable"))
@@ -48,7 +56,7 @@ internal static class Program
             app.DispatcherUnhandledException+=(_,e)=>{MessageBox.Show("整理遇到异常，即将恢复桌面并退出。\n"+e.Exception.Message,"Desktop Glass");e.Handled=true;app.Shutdown(1);};
             var profileIndex=Array.IndexOf(args,"--profile");
             var profile=profileIndex>=0?Path.GetFullPath(args[profileIndex+1]):Installation.Data;
-            using var controller=new DesktopController(app,profile);
+            using var controller=new NativeDesktopController(app,profile);
             app.Exit+=(_,_)=>controller.Dispose();controller.Start();
             var durationIndex=Array.IndexOf(args,"--run-seconds");
             if(durationIndex>=0)
@@ -56,7 +64,7 @@ internal static class Program
                 var finish=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromSeconds(Math.Clamp(int.Parse(args[durationIndex+1]),1,600))};
                 finish.Tick+=(_,_)=>{finish.Stop();controller.Exit();};finish.Start();
             }
-            app.Run();registered.Unregister(null);return 0;
+            var exitCode=app.Run();registered.Unregister(null);return controller.CleanupFailed?1:exitCode;
         }
         catch(Exception e) {System.Windows.MessageBox.Show(e.Message,"Desktop Glass",MessageBoxButton.OK,MessageBoxImage.Error);return 1;}
     }

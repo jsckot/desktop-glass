@@ -53,7 +53,7 @@ internal static class Installation
         if(register)
         {
             using var key=Registry.CurrentUser.CreateSubKey(RegistryPath);
-            key.SetValue("DisplayName","Desktop Glass 桌面分组");key.SetValue("DisplayVersion","0.1.0");key.SetValue("Publisher","Desktop Glass");
+            key.SetValue("DisplayName","Desktop Glass 桌面分组");key.SetValue("DisplayVersion","0.2.0");key.SetValue("Publisher","Desktop Glass");
             key.SetValue("InstallLocation",root);key.SetValue("DisplayIcon",target);key.SetValue("UninstallString","\""+target+"\" --uninstall");key.SetValue("NoModify",1);key.SetValue("NoRepair",1);
             Shortcut(target,"Desktop Glass.lnk","");Shortcut(target,"卸载 Desktop Glass.lnk","--uninstall");
         }
@@ -67,6 +67,10 @@ internal static class Installation
         File.WriteAllText(Path.Combine(Root,".maintenance"),"uninstall");
         StopRunning();
         Windows.DesktopLease.Recover(Path.Combine(Data,"recovery.json"));
+        // 先恢复逐项收纳；任何未完成恢复都必须阻止配置与程序清理。
+        Windows.ItemVisibilityLease.RecoverRegistered();
+        Windows.ItemVisibilityLease.Recover(Data);
+        CleanupRecoveredItemState(Data);
         Registry.CurrentUser.DeleteSubKeyTree(RegistryPath,false);
         var menu=MenuDirectory();foreach(var name in new[]{"Desktop Glass.lnk","卸载 Desktop Glass.lnk"}){var file=Path.Combine(menu,name);if(File.Exists(file))File.Delete(file);}
         if(Directory.Exists(menu) && !Directory.EnumerateFileSystemEntries(menu).Any())Directory.Delete(menu);
@@ -82,6 +86,40 @@ internal static class Installation
             if(!Directory.EnumerateFileSystemEntries(Data).Any())Directory.Delete(Data);
         }
         StartCleanup(Root,Environment.ProcessId);
+    }
+    /// <summary>在恢复已完成后有界清理逐项租约元数据；不删除未知文件或未完成的恢复责任。</summary>
+    /// <param name="data">已归属本软件的配置目录；不存在时无操作。</param>
+    /// <exception cref="InvalidOperationException">仍有正式恢复日志、活动指针或目录归属异常。</exception>
+    /// <exception cref="IOException">清理失败，调用方必须停止卸载而非继续删除程序。</exception>
+    internal static void CleanupRecoveredItemState(string data)
+    {
+        if(!Directory.Exists(data))return;
+        EnsureOwned(data);Windows.ItemPathPolicy.EnsureNoReparse(data);
+        var state=Path.Combine(data,"item-lease-state");
+        if(File.Exists(Path.Combine(data,Windows.ItemVisibilityLease.JournalName)))
+            throw new InvalidOperationException("仍有项目恢复记录，已停止卸载清理。");
+        if(Directory.Exists(state))
+        {
+            EnsureOwned(state);Windows.ItemPathPolicy.EnsureNoReparse(state);
+            if(File.Exists(Path.Combine(state,"item-active-lease.json")))
+                throw new InvalidOperationException("仍有登记的项目恢复责任，已停止卸载清理。");
+        }
+        foreach(var file in Directory.EnumerateFiles(data))
+        {
+            var name=Path.GetFileName(file);
+            if(name=="item-recovery.json.guard-error.txt" || IsAtomicRemainder(name,"item-recovery.json"))File.Delete(file);
+        }
+        if(!Directory.Exists(state))return;
+        foreach(var file in Directory.EnumerateFiles(state))
+            if(IsAtomicRemainder(Path.GetFileName(file),"item-active-lease.json"))File.Delete(file);
+        var marker=Path.Combine(state,".desktop-glass-owner");
+        if(Directory.EnumerateFileSystemEntries(state).All(path=>string.Equals(path,marker,StringComparison.OrdinalIgnoreCase)))
+        {File.Delete(marker);Directory.Delete(state);}
+    }
+    private static bool IsAtomicRemainder(string name,string baseName)
+    {
+        var prefix=baseName+".new-";
+        return name.StartsWith(prefix,StringComparison.Ordinal) && Guid.TryParseExact(name[prefix.Length..],"N",out _);
     }
     internal static Process StartCleanup(string root,int waitPid)
     {
