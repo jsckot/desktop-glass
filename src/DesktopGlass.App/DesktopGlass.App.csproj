@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>DesktopGlass</AssemblyName><Version>0.1.0</Version>
+    <ApplicationManifest>app.manifest</ApplicationManifest><StartupObject>DesktopGlass.App.Program</StartupObject>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../DesktopGlass.Core/DesktopGlass.Core.csproj" /></ItemGroup>
+</Project>
