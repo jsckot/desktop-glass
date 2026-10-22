@@ -37,6 +37,8 @@ internal static class Native
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] internal static extern bool SystemParametersInfo(uint action,uint param,StringBuilder output,uint flags);
     [DllImport("user32.dll")] internal static extern bool DestroyIcon(nint icon);
     [DllImport("shell32.dll", CharSet=CharSet.Unicode)] internal static extern nint SHGetFileInfo(string path,uint attributes,ref ShellFileInfo info,uint size,uint flags);
+    [DllImport("shell32.dll", EntryPoint="SHGetFileInfoW")] internal static extern nint SHGetFileInfoPidl(nint pidl,uint attributes,ref ShellFileInfo info,uint size,uint flags);
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode)] internal static extern int SHParseDisplayName(string name,nint bind,out nint pidl,uint mask,out uint attributes);
     [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] internal struct ShellFileInfo
     {
         internal nint Icon; internal int Index; internal uint Attributes;

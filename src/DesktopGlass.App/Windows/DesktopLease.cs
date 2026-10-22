@@ -12,7 +12,7 @@ internal sealed class DesktopLease : IDisposable
     private Process? guard;
     internal DesktopLease(string directory) { Directory.CreateDirectory(directory); journal=Path.Combine(directory,"recovery.json"); }
     internal nint Parent {get;private set;}
-    internal bool Alive => record is not null && Native.IsWindow((nint)record.ListWindow) && Matches(record);
+    internal bool Alive => record is not null && (guard is null || !guard.HasExited) && Native.IsWindow((nint)record.ListWindow) && Matches(record);
     internal void Acquire()
     {
         Recover(journal);
@@ -88,7 +88,7 @@ internal static class Self
     {
         var executable=Environment.ProcessPath ?? throw new InvalidOperationException("无法确定程序路径。");
         var start=new ProcessStartInfo(executable){UseShellExecute=false,CreateNoWindow=true};
-        if(Path.GetFileNameWithoutExtension(executable).Equals("dotnet",StringComparison.OrdinalIgnoreCase)) start.ArgumentList.Add(typeof(Self).Assembly.Location);
+        if(Path.GetFileNameWithoutExtension(executable).Equals("dotnet",StringComparison.OrdinalIgnoreCase)) start.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory,"DesktopGlass.dll"));
         foreach(var arg in args) start.ArgumentList.Add(arg);
         return Process.Start(start) ?? throw new InvalidOperationException("无法启动恢复进程。");
     }

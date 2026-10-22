@@ -11,8 +11,14 @@ internal static class Program
         try
         {
             if(args.Length>=3 && args[0]=="--watch") return DesktopLease.Watch(args[1],args[2]);
+            if(args.Contains("--ui-test")) return UiDiagnostics.Run(args);
             if(args.Contains("--diagnose") || args.Contains("--smoke") || args.Contains("--crash-test") || args.Contains("--crash-child")) return Diagnostics.Run(args);
-            System.Windows.MessageBox.Show("正在构建桌面界面，请使用诊断模式。","Desktop Glass"); return 0;
+            using var instance=new Mutex(true,"Local\\DesktopGlass-main",out var first);
+            if(!first){MessageBox.Show("Desktop Glass 已在运行，请使用任务栏托盘菜单。","Desktop Glass");return 0;}
+            var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
+            app.DispatcherUnhandledException+=(_,e)=>{MessageBox.Show("整理遇到异常，即将恢复桌面并退出。\n"+e.Exception.Message,"Desktop Glass");e.Handled=true;app.Shutdown(1);};
+            using var controller=new DesktopController(app,Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopGlass"));
+            app.Exit+=(_,_)=>controller.Dispose();controller.Start();app.Run();return 0;
         }
         catch(Exception e) {System.Windows.MessageBox.Show(e.Message,"Desktop Glass",MessageBoxButton.OK,MessageBoxImage.Error);return 1;}
     }
@@ -27,8 +33,9 @@ internal static class Diagnostics
         var evidence=output is null ? null : Path.GetDirectoryName(Path.GetFullPath(output));
         try
         {
-            var displays=Native.Displays(); var entries=new DesktopCatalog().Scan(); var list=Native.DesktopListView();
+            var displays=Native.Displays(); var catalog=new DesktopCatalog(); var entries=catalog.Scan(); var list=Native.DesktopListView();
             if(displays.Count==0 || list==0 || entries.Count==0) throw new InvalidOperationException("桌面能力检查失败。");
+            if(args.Contains("--diagnose") && entries.Any(e=>e.Path.StartsWith("::",StringComparison.Ordinal) && catalog.Icon(e.Path) is null))throw new InvalidOperationException("虚拟桌面入口图标读取失败。");
             if(args.Contains("--crash-child"))
             {
                 var data=args[Array.IndexOf(args,"--data")+1];

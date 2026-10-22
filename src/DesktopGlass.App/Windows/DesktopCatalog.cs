@@ -31,7 +31,12 @@ internal sealed class DesktopCatalog
     {
         if(icons.TryGetValue(path,out var cached)) return cached;
         var info=new Native.ShellFileInfo {DisplayName="",TypeName=""};
-        Native.SHGetFileInfo(path,0,ref info,(uint)Marshal.SizeOf<Native.ShellFileInfo>(),0x100);
+        if(path.StartsWith("::",StringComparison.Ordinal))
+        {
+            if(Native.SHParseDisplayName(path,0,out var pidl,0,out _)>=0)
+            {try{Native.SHGetFileInfoPidl(pidl,0,ref info,(uint)Marshal.SizeOf<Native.ShellFileInfo>(),0x108);}finally{Marshal.FreeCoTaskMem(pidl);}}
+        }
+        else Native.SHGetFileInfo(path,0,ref info,(uint)Marshal.SizeOf<Native.ShellFileInfo>(),0x100);
         if(info.Icon==0) return null;
         try
         {
