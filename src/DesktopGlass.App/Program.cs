@@ -8,17 +8,55 @@ internal static class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // 恢复进程不进入包含 WPF 类型的启动方法，避免为等待父进程加载整个界面框架。
+        if(args.Length>=3 && args[0]=="--watch")
+        {try{return DesktopLease.Watch(args[1],args[2]);}catch{return 2;}}
+        return RunApplication(args);
+    }
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static int RunApplication(string[] args)
+    {
         try
         {
-            if(args.Length>=3 && args[0]=="--watch") return DesktopLease.Watch(args[1],args[2]);
+            if(args.Length==3 && args[0]=="--hold-directory"){Environment.CurrentDirectory=args[1];File.WriteAllText(args[2],"ready");Thread.Sleep(30000);return 0;}
+            if(args.Contains("--safety-tests"))return SafetyDiagnostics.Run(args);
+            if(args.Contains("--install-test"))return InstallDiagnostics.Run(args);
+            if(args.Contains("--uninstall"))
+            {
+                if(MessageBox.Show("卸载 Desktop Glass？将恢复原生桌面并清理本软件配置，你的文件会保留。","Desktop Glass",MessageBoxButton.YesNo,MessageBoxImage.Question)!=MessageBoxResult.Yes)return 0;
+                Installation.Uninstall();return 0;
+            }
             if(args.Contains("--ui-test")) return UiDiagnostics.Run(args);
             if(args.Contains("--diagnose") || args.Contains("--smoke") || args.Contains("--crash-test") || args.Contains("--crash-child")) return Diagnostics.Run(args);
-            using var instance=new Mutex(true,"Local\\DesktopGlass-main",out var first);
-            if(!first){MessageBox.Show("Desktop Glass 已在运行，请使用任务栏托盘菜单。","Desktop Glass");return 0;}
+            if(!Installation.IsInstalled && !args.Contains("--portable"))
+            {
+                var choice=MessageBox.Show("安装 Desktop Glass 到当前用户，并创建开始菜单入口？\n\n是：安装并启动\n否：仅本次运行\n取消：退出","Desktop Glass 安装",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
+                if(choice==MessageBoxResult.Cancel)return 0;
+                if(choice==MessageBoxResult.Yes){Installation.Install(Environment.ProcessPath!,Installation.Root,true);Process.Start(new ProcessStartInfo(Path.Combine(Installation.Root,"DesktopGlass.exe")){UseShellExecute=true});return 0;}
+            }
+            Mutex instance;EventWaitHandle stop;
+            using(Installation.EnterMaintenance())
+            {
+                Installation.CheckStartupAllowed();
+                instance=new Mutex(true,"Local\\DesktopGlass-main",out var first);
+                if(!first){instance.Dispose();MessageBox.Show("Desktop Glass 已在运行，请使用任务栏托盘菜单。","Desktop Glass");return 0;}
+                stop=new EventWaitHandle(false,EventResetMode.ManualReset,Installation.StopEvent);
+            }
+            using var instanceLifetime=instance;using var stopLifetime=stop;
             var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
+            var registered=ThreadPool.RegisterWaitForSingleObject(stop,(_,_)=>app.Dispatcher.BeginInvoke(()=>app.Shutdown()),null,Timeout.Infinite,true);
             app.DispatcherUnhandledException+=(_,e)=>{MessageBox.Show("整理遇到异常，即将恢复桌面并退出。\n"+e.Exception.Message,"Desktop Glass");e.Handled=true;app.Shutdown(1);};
-            using var controller=new DesktopController(app,Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopGlass"));
-            app.Exit+=(_,_)=>controller.Dispose();controller.Start();app.Run();return 0;
+            var profileIndex=Array.IndexOf(args,"--profile");
+            var profile=profileIndex>=0?Path.GetFullPath(args[profileIndex+1]):Installation.Data;
+            using var controller=new DesktopController(app,profile);
+            app.Exit+=(_,_)=>controller.Dispose();controller.Start();
+            var durationIndex=Array.IndexOf(args,"--run-seconds");
+            if(durationIndex>=0)
+            {
+                var finish=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromSeconds(Math.Clamp(int.Parse(args[durationIndex+1]),1,600))};
+                finish.Tick+=(_,_)=>{finish.Stop();controller.Exit();};finish.Start();
+            }
+            app.Run();registered.Unregister(null);return 0;
         }
         catch(Exception e) {System.Windows.MessageBox.Show(e.Message,"Desktop Glass",MessageBoxButton.OK,MessageBoxImage.Error);return 1;}
     }

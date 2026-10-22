@@ -11,6 +11,7 @@ internal static class UiDiagnostics
     internal static int Run(string[] args)
     {
         var output=args[Array.IndexOf(args,"--output")+1];var root=Path.GetDirectoryName(Path.GetFullPath(output))!;Directory.CreateDirectory(root);
+        var holdIndex=Array.IndexOf(args,"--hold-seconds");var hold=holdIndex>=0?Math.Clamp(int.Parse(args[holdIndex+1]),0,600):0;
         var visible=Native.IsWindowVisible(Native.DesktopListView());
         var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
         using var controller=new DesktopController(app,Path.Combine(root,"ui-profile"));
@@ -41,7 +42,15 @@ internal static class UiDiagnostics
                     if(width<=0||height<=0||!File.Exists(Path.Combine(root,"ui-profile","workspace.json")))throw new InvalidOperationException("界面或保存未通过。");
                 }
                 catch(Exception e){failure=e;}
-                finally{controller.Exit();}
+                finally
+                {
+                    if(failure is null && hold>0)
+                    {
+                        File.WriteAllText(Path.Combine(root,"ready.json"),JsonSerializer.Serialize(new{Pid=Environment.ProcessId,EntryCount=controller.Entries.Count,GroupCount=controller.Workspace.Groups.Count}));
+                        var finish=new DispatcherTimer{Interval=TimeSpan.FromSeconds(hold)};finish.Tick+=(_,_)=>{finish.Stop();controller.Exit();};finish.Start();
+                    }
+                    else controller.Exit();
+                }
             };
             timer.Start();app.Run();
             if(failure is not null)throw failure;
