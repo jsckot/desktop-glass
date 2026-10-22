@@ -1,0 +1,7 @@
+.codex/
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+TestResults/

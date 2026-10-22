@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="src/DesktopGlass.Core/DesktopGlass.Core.csproj" />
+  <Project Path="src/DesktopGlass.App/DesktopGlass.App.csproj" />
+  <Project Path="tests/DesktopGlass.Tests/DesktopGlass.Tests.csproj" />
+</Solution>
