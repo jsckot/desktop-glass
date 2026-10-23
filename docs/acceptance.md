@@ -1,4 +1,39 @@
-# Desktop Glass 0.3.1 体验版验收记录
+# Desktop Glass 0.4.0 体验版验收记录
+
+日期：2026-10-23。基线 `a26b8d3`，分支 `feat/desktop-groups-mvp`。本版回应真实背景玻璃、紧凑方块与悬停展开反馈；固定 12 DIP 轻圆角，移除圆角滑块。未改桌面文件属性租约和工作区格式。
+
+## 0.4 已验证
+
+| 项目 | 证据和结论 |
+| --- | --- |
+| 系统材质 | 用户确认自有顶层 HostBackdrop 能透出后方彩块，失去焦点仍模糊，WPF 文字和按钮可见且可点击。子 HWND 探针无效，未将 API 成功当视觉证明 |
+| 合成生命周期 | `production-backdrop-lifecycle.json`，真实生产源文件独立链接，6 轮重复启用、多窗口、缩放、撤销重建及关闭通过 |
+| 默认桌面层 | `layer/real-layer-v5.json` 与原始 Harness：无桌面 owner，443 个外部窗口的相对顺序在初放、原生隐藏恢复、最小化恢复后均不变，前台不变 |
+| 用户直接体验 | `manual-retry.json` 为结构记录；用户另外明确确认 Win+D 可见、鼠标移入展开/移出收起、普通应用正常遮挡。此人工结论与自动结构检查分开记录 |
+| 发布版外观 | `release-appearance-tests.json`，12 项通过；即时预览、不落盘、同 HWND、保存失败、取消、多组隔离和固定圆角原生区域镜像 |
+| 发布版窗口 | `release-desktop-layer-tests.json` 22 项，`release-layout-lifecycle-tests.json` 5 项；层级、非激活、共享钩子、隐藏/恢复、关闭不复活、移动缩放不重建 |
+| 紧凑交互 | `integrated-hover-tests.json` 6 项，含真实指针、菜单、锁定与合成混合 DPI。`release-hover-tests.json` 以 `--keyboard-only` 检查几何及点击路径真实 WPF/原生键盘焦点、方向键保持与失焦收起；不声称物理点击端到端覆盖 |
+| 数据和领域 | `release-controller-tests.json` 17 项纯事务检查；`release-build-final.log` 领域 18/18、自包含发布及 Inno 编译通过 |
+| 布局视觉 | `ui.json` 及同名前缀 PNG：紧凑/展开、列表、最小窗口、编辑器、外观、菜单与品牌。离线渲染不代表最终 DWM 图像 |
+| 安装卸载 | `installer-checks.log` 9 项通过，隔离目录 `installer-413e738efdf440fb9d55b395391f1fd2`；覆盖中文自选目录、默认目录、失败恢复、维护互斥与保留未知内容 |
+| 独立审查 | `v04_review` 未参与实施，只读核查核心交互、最终层级、焦点修复及发布配置，通过，无剩余 P1/P2 |
+
+除特别给出的安装沙箱外，以上证据相对项目 `.codex/tmp/0.4/`。没有停止或改写已安装实例，没有收纳真实桌面文件。测试窗口均已自动关闭。
+
+发布配置修正：全局 `RuntimeFrameworkVersion` 会错误套用 Windows SDK 投影引用版本，红灯见 `release-build.log`；改为仅固定两个 .NET FrameworkReference。实际 runtimeconfig 为 .NET/WindowsDesktop 10.0.13，SDK 投影 10.0.22621.57。安装器最低版本 22621 与 TFM 一致；仅本机 build 26300 定向验证，不代表其他版本已认证。
+
+仍未实测：物理外屏热插拔、真实混合 DPI 切换、睡眠恢复、长期 CPU/GPU/内存和电池续航。真实 OLE 收纳和恢复沿用之前的用户验证，本轮没有重新触碰真实项目。安装沙箱不写真实安装登记和开始菜单。
+
+## 0.4 交付
+
+- `.codex/artifacts/DesktopGlass-Setup-0.4.0-x64.exe`，57,678,813 字节，约 55.0 MiB。
+- SHA256：`DBF7C781FB2564FEF36DFD473A0773E003DB54A7063C9E93354D7040DFD8A414`。
+- 自包含负载 `.codex/artifacts/desktop-glass-0.4.0-win-x64/`，版本 `0.4.0.0`。
+- 只做本地提交，不 push、PR 或合并。保留原有 `tests/Verify-Windows.ps1` 工作区状态。
+
+---
+
+# Desktop Glass 0.3.1 历史体验版验收记录
 
 日期：2026-10-23。本轮回应菜单、Logo、圆角与外观实时预览反馈；分支 `feat/desktop-groups-mvp`，基线 `98c64fb`。未改文件收纳与安装生命周期契约。
 
