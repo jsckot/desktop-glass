@@ -1,4 +1,33 @@
-# Desktop Glass 0.3.0 体验版验收记录
+# Desktop Glass 0.3.1 体验版验收记录
+
+日期：2026-10-23。本轮回应菜单、Logo、圆角与外观实时预览反馈；分支 `feat/desktop-groups-mvp`，基线 `98c64fb`。未改文件收纳与安装生命周期契约。
+
+## 0.3.1 已验证
+
+| 项目 | 证据和结论 |
+| --- | --- |
+| Release 构建与领域检查 | `.codex/tmp/0.3.1/release-build.log`，领域 18/18，发布及 Inno 编译成功 |
+| 即时外观与恢复 | `.codex/tmp/0.3.1/release-appearance.json`，交付自包含负载执行 `--layout-lifecycle-tests --appearance-only`，12 组检查通过：不提前落盘、同 HWND、多组隔离、拖动、重建与隐藏、保存事务、保存失败保留输入和预览、取消恢复、移除及退出清理 |
+| 圆角与工作区 | 同一证据包含 0/48 DIP、1/1.25/1.5 参数倍率原生区域四角像素镜像差异均为 0，实际 HWND DPI 120；缩放标记位于弧线内部、材质边线随预览更新；负坐标较矮副屏为合成数据验证 |
+| 控制器事务 | `.codex/tmp/0.3.1/controller-final.json`，17 项通过，纯内存测试未操作真实桌面 |
+| 界面与品牌 | `.codex/tmp/0.3.1/visual-verified.json` 及同名前缀 PNG；检查空态、列表、外观、关于、编辑器、菜单、最大/零圆角、最小窗口 40 字名称；修正渲染工具自身的留白坐标偏移，最终底部按钮完整 |
+| 多尺寸 ICO | 16/24/32/48/64/128/256；正式 ICO 与 WPF 渲染导出的 ICO SHA256 一致：`FFADB2B72CE1DD4FADDCE67B2CF486D8492467A9DFCB89FF0C6B3409C4EC48A8` |
+| 隔离安装与卸载 | `.codex/tmp/0.3.1/installer-checks.log`，9 项通过；原始结果 `.codex/tmp/installer-742e7c482dc9420282f05669d17f347c/result.json` |
+| 独立只读审查 | `appearance_review` 未参与实施；修复高对比度菜单局部前景色及编辑器工作区仅取主屏两项 P2 后通过，无剩余 P1/P2 |
+
+本轮使用自有测试窗口，无 `Start` / `Acquire` / `RecoverRegistered`，收纳真实项目数量为 0；保留用户正在运行的已安装实例。界面图片是离线 WPF 渲染，不作为新的 DWM 最终合成视觉证据。
+
+仍未实测：物理外接屏热插拔/实际 100% 与 150% DPI 切换、系统高对比度主题切换、其他 Windows 11 版本及长期资源指标。正式安装登记和开始菜单不在隔离安装测试范围；用户自行安装体验。
+
+## 0.3.1 交付产物
+
+- `.codex/artifacts/DesktopGlass-Setup-0.3.1-x64.exe`，53,821,302 字节（约 51.3 MiB）。
+- SHA256：`7234ECF0590482284EF3F100F5C18B39D227B47796579A5BBC94BBDF939E520C`。
+- 自包含负载版本 `0.3.1.0`；已有 0.3 的分组显示意愿和布局继续保留。
+
+---
+
+# Desktop Glass 0.3.0 历史验收记录
 
 日期：2026-10-23。分支 `feat/desktop-groups-mvp`。本轮保留原生桌面与逐项恢复，增加 EXE 安装器、管理面板、空首启、显示状态迁移、统一样式和临时前景模式。只本地提交，未推送或合并。
 
