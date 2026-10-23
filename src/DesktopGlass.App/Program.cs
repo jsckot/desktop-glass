@@ -20,6 +20,7 @@ internal static class Program
     {
         try
         {
+            if(args.Length>0 && args[0].StartsWith("--setup-",StringComparison.Ordinal))return InstallerBridge.Run(args);
             if(args.Length==3 && args[0]=="--hold-directory"){Environment.CurrentDirectory=args[1];File.WriteAllText(args[2],"ready");Thread.Sleep(30000);return 0;}
             if(args.Contains("--native-item-test") || args.Contains("--native-item-crash-child"))return NativeItemDiagnostics.Run(args);
             if(args.Contains("--cleanup-state-tests"))return UninstallStateDiagnostics.Run(args);
@@ -36,12 +37,6 @@ internal static class Program
             if(args.Contains("--widget-preview") || args.Contains("--widget-host-test")) return WidgetDiagnostics.Run(args);
             if(args.Contains("--ui-test")) return UiDiagnostics.Run(args);
             if(args.Contains("--diagnose") || args.Contains("--smoke") || args.Contains("--crash-test") || args.Contains("--crash-child")) return Diagnostics.Run(args);
-            if(!Installation.IsInstalled && !args.Contains("--portable"))
-            {
-                var choice=MessageBox.Show("安装 Desktop Glass 到当前用户，并创建开始菜单入口？\n\n是：安装并启动\n否：仅本次运行\n取消：退出","Desktop Glass 安装",MessageBoxButton.YesNoCancel,MessageBoxImage.Question);
-                if(choice==MessageBoxResult.Cancel)return 0;
-                if(choice==MessageBoxResult.Yes){Installation.Install(Environment.ProcessPath!,Installation.Root,true);Process.Start(new ProcessStartInfo(Path.Combine(Installation.Root,"DesktopGlass.exe")){UseShellExecute=true});return 0;}
-            }
             Mutex instance;EventWaitHandle stop;
             using(Installation.EnterMaintenance())
             {

@@ -2,10 +2,11 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
-    <AssemblyName>DesktopGlass</AssemblyName><Version>0.2.0</Version>
-    <ApplicationManifest>app.manifest</ApplicationManifest><StartupObject>DesktopGlass.App.Program</StartupObject>
+    <AssemblyName>DesktopGlass</AssemblyName><Version>0.3.0</Version>
+    <ApplicationIcon>../../assets/desktop-glass.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest><StartupObject>DesktopGlass.App.Program</StartupObject>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../DesktopGlass.Core/DesktopGlass.Core.csproj" /></ItemGroup>
+  <ItemGroup><None Include="../../assets/desktop-glass.ico" Link="assets/desktop-glass.ico" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

@@ -7,7 +7,16 @@ namespace DesktopGlass.App;
 internal static class Installation
 {
     internal const string ProductId="DesktopGlass-52ed77bc-5636-48d9-98f9-548648e153bc";
-    internal static string Root=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","DesktopGlass");
+    internal static string Root
+    {
+        get
+        {
+            var current=Path.GetDirectoryName(Environment.ProcessPath)!;
+            var marker=Path.Combine(current,".desktop-glass-owner");
+            return File.Exists(marker) && File.ReadAllText(marker)==ProductId ? current :
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Programs","DesktopGlass");
+        }
+    }
     internal static string Data=>Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DesktopGlass");
     internal const string StopEvent="Local\\DesktopGlass-stop";
     private const string RegistryPath="Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\DesktopGlass";
@@ -53,7 +62,7 @@ internal static class Installation
         if(register)
         {
             using var key=Registry.CurrentUser.CreateSubKey(RegistryPath);
-            key.SetValue("DisplayName","Desktop Glass 桌面分组");key.SetValue("DisplayVersion","0.2.0");key.SetValue("Publisher","Desktop Glass");
+            key.SetValue("DisplayName","Desktop Glass 桌面分组");key.SetValue("DisplayVersion","0.3.0");key.SetValue("Publisher","Desktop Glass");
             key.SetValue("InstallLocation",root);key.SetValue("DisplayIcon",target);key.SetValue("UninstallString","\""+target+"\" --uninstall");key.SetValue("NoModify",1);key.SetValue("NoRepair",1);
             Shortcut(target,"Desktop Glass.lnk","");Shortcut(target,"卸载 Desktop Glass.lnk","--uninstall");
         }
@@ -81,7 +90,7 @@ internal static class Installation
             foreach(var file in Directory.EnumerateFiles(Data))
             {
                 var name=Path.GetFileName(file);
-                if(name is "workspace.json" or "workspace.json.bak" or "workspace.json.new" or "recovery.json" or ".desktop-glass-owner" || name.StartsWith("workspace.json.corrupt-",StringComparison.Ordinal))File.Delete(file);
+                if(name is "workspace.json" or "workspace.json.bak" or "workspace.json.new" or "workspace.v1.backup.json" or "recovery.json" or ".desktop-glass-owner" || name.StartsWith("workspace.json.corrupt-",StringComparison.Ordinal))File.Delete(file);
             }
             if(!Directory.EnumerateFileSystemEntries(Data).Any())Directory.Delete(Data);
         }
