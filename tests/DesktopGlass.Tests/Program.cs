@@ -83,5 +83,56 @@ Test("canceled or system interrupted layout edits never commit",()=>{
     True(!LayoutEditPolicy.CanCommit(false,false,false,false,true));
     True(LayoutEditPolicy.CanCommit(false,false,false,false,false));
 });
+
+Test("v2 starts empty and only explicit add enables a group", () => {
+    var w = new Workspace(); Equal(2, w.Version); Equal(0, w.Groups.Count);
+    var g = w.AddGroup("工具", "A"); True(g.DesktopVisible); Equal(320d, g.Width); Equal(240d, g.Height);
+});
+Test("v1 upgrade pauses all groups while preserving content and layout", () => {
+    var root = Path.Combine(AppContext.BaseDirectory, "test-data", Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+    try {
+        var json = """{"Version":1,"Locked":true,"Groups":[{"Id":"old","Name":"旧分组","DisplayId":"B","X":123,"Y":456,"Width":350,"Height":300,"Tint":0.32,"Radius":24,"Entries":["C:/desktop/test.lnk"]}]}""";
+        File.WriteAllText(Path.Combine(root,"workspace.json"), json);
+        var store = new WorkspaceStore(root); var w = store.Load();
+        Equal(2,w.Version); True(!w.Groups[0].DesktopVisible); Equal("B",w.Groups[0].DisplayId);
+        Equal(123d,w.Groups[0].X); Equal("C:/desktop/test.lnk",w.Groups[0].Entries.Single()); True(w.Locked);
+        store.Save(w); True(File.Exists(Path.Combine(root,"workspace.v1.backup.json")));
+        Equal(json,File.ReadAllText(Path.Combine(root,"workspace.v1.backup.json")));
+        w.Groups[0].DesktopVisible=true; store.Save(w);
+        True(new WorkspaceStore(root).Load().Groups[0].DesktopVisible);
+        Equal(json,File.ReadAllText(Path.Combine(root,"workspace.v1.backup.json")));
+    } finally { Directory.Delete(root,true); }
+});
+Test("only enabled groups on connected displays can collect", () => {
+    var w = new Workspace(); var a=w.AddGroup("当前","A"); a.Entries.Add("a");
+    var b=w.AddGroup("缺屏","B"); b.Entries.Add("b");
+    var c=w.AddGroup("隐藏","A"); c.DesktopVisible=false; c.Entries.Add("c");
+    Equal("a",string.Join(",",WorkspaceVisibility.VisibleEntries(w,[screenA])));
+    Equal("a,b",string.Join(",",WorkspaceVisibility.VisibleEntries(w,[screenA,screenB])));
+    Equal("B",b.DisplayId);
+});
+
+Test("unknown primary version never falls back or overwrites older backup", () => {
+    var root=Path.Combine(AppContext.BaseDirectory,"test-data",Guid.NewGuid().ToString("N")); Directory.CreateDirectory(root);
+    try {
+        var newer="""{"Version":3,"Groups":[]}""";var older="""{"Version":2,"Groups":[]}""";
+        File.WriteAllText(Path.Combine(root,"workspace.json"),newer);File.WriteAllText(Path.Combine(root,"workspace.json.bak"),older);
+        Throws<NotSupportedException>(()=>new WorkspaceStore(root).Load());
+        Equal(newer,File.ReadAllText(Path.Combine(root,"workspace.json")));Equal(older,File.ReadAllText(Path.Combine(root,"workspace.json.bak")));
+    } finally {Directory.Delete(root,true);}
+});
+
+Test("malformed schema types still recover valid backup", () => {
+    foreach(var bad in new[]{"[]","null","42","{}","{\"Version\":\"bad\",\"Groups\":[]}"}) {
+        var root=Path.Combine(AppContext.BaseDirectory,"test-data",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
+        try {
+            File.WriteAllText(Path.Combine(root,"workspace.json"),bad);
+            var good=new Workspace();good.AddGroup("备份分组","A");
+            File.WriteAllText(Path.Combine(root,"workspace.json.bak"),System.Text.Json.JsonSerializer.Serialize(good));
+            var store=new WorkspaceStore(root);Equal("备份分组",store.Load().Groups.Single().Name);True(store.RecoveredFromBackup);
+            Equal(bad,File.ReadAllText(Path.Combine(root,"workspace.json")));
+        } finally {Directory.Delete(root,true);}
+    }
+});
 Console.WriteLine($"RESULT {passed} passed, {failed} failed");
 return failed == 0 ? 0 : 1;

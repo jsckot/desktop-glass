@@ -3,8 +3,8 @@ namespace DesktopGlass.Core;
 /// <summary>仅保存入口引用和分组偏好，不对真实文件执行移动或删除。</summary>
 public sealed class Workspace
 {
-    /// <summary>配置格式版本，仅支持版本 1。</summary>
-    public int Version { get; set; } = 1;
+    /// <summary>配置格式版本；版本 1 只供读取迁移，保存使用版本 2。</summary>
+    public int Version { get; set; } = 2;
     /// <summary>用户定义的分组，顺序为创建顺序。</summary>
     public List<Group> Groups { get; set; } = [];
     /// <summary>是否锁定分组位置与大小。</summary>
@@ -16,7 +16,7 @@ public sealed class Workspace
     public Group AddGroup(string name, string displayId)
     {
         if (string.IsNullOrWhiteSpace(name) || name.Trim().Length > 40) throw new ArgumentException("分组名称须为 1～40 个字符。", nameof(name));
-        var group = new Group { Name = name.Trim(), DisplayId = displayId, X = 36 + Groups.Count % 3 * 380, Y = 96 + Groups.Count / 3 * 320 };
+        var group = new Group { Name = name.Trim(), DisplayId = displayId, DesktopVisible = true, X = 36 + Groups.Count % 3 * 380, Y = 96 + Groups.Count / 3 * 320 };
         Groups.Add(group); return group;
     }
 
@@ -38,7 +38,7 @@ public sealed class Workspace
     /// <summary>校验反序列化数据，拒绝重复标识、无效数值及超大数据；无效时抛出 InvalidDataException。</summary>
     public void Validate()
     {
-        if (Version != 1 || Groups is null || Groups.Count > 200) throw new InvalidDataException("配置版本或分组数量无效。");
+        if (Version is not (1 or 2) || Groups is null || Groups.Count > 200) throw new InvalidDataException("配置版本或分组数量无效。");
         var ids = new HashSet<string>(); var entries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var g in Groups)
         {
@@ -56,6 +56,8 @@ public sealed class Group
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
     /// <summary>用户可见名称，1～40 字符。</summary>
     public string Name { get; set; } = "新分组";
+    /// <summary>用户希望在桌面显示该组；缺屏时保留意愿但不创建组件或隐藏项目。</summary>
+    public bool DesktopVisible { get; set; }
     /// <summary>显示器设备身份；缺失显示器时保留原值。</summary>
     public string DisplayId { get; set; } = "";
     /// <summary>相对工作区左边的 DIP 距离。</summary>
@@ -63,13 +65,13 @@ public sealed class Group
     /// <summary>相对工作区顶边的 DIP 距离。</summary>
     public double Y { get; set; } = 96;
     /// <summary>宽度 DIP，允许 240～2000。</summary>
-    public double Width { get; set; } = 350;
+    public double Width { get; set; } = 320;
     /// <summary>高度 DIP，允许 160～1600。</summary>
-    public double Height { get; set; } = 300;
+    public double Height { get; set; } = 240;
     /// <summary>玻璃底色不透明度，0.12～0.85。</summary>
-    public double Tint { get; set; } = 0.32;
+    public double Tint { get; set; } = 0.18;
     /// <summary>外轮廓圆角 DIP，0～48。</summary>
-    public double Radius { get; set; } = 24;
+    public double Radius { get; set; } = 20;
     /// <summary>Shell 入口路径，列表顺序即显示顺序。</summary>
     public List<string> Entries { get; set; } = [];
     internal bool HasValidGeometry() => double.IsFinite(X) && double.IsFinite(Y) && Math.Abs(X) <= 100000 && Math.Abs(Y) <= 100000 && Width is >= 240 and <= 2000 && Height is >= 160 and <= 1600 && Tint is >= .12 and <= .85 && Radius is >= 0 and <= 48;
