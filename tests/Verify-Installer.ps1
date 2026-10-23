@@ -30,6 +30,11 @@ try {
     Check ((Setup 'custom-install' $target) -eq 0) '中文空格目录安装失败'
     Check ((Test-Path (Join-Path $target 'DesktopGlass.exe')) -and -not(Test-Path (Join-Path $target '.maintenance'))) '安装负载或维护标记错误'
     $results.Add('自选中文空格目录安装')
+    $foreign=Join-Path $work '非产品目录'; New-Item -ItemType Directory -Path $foreign | Out-Null
+    [IO.File]::WriteAllText((Join-Path $foreign '用户文件.txt'),'keep')
+    Check ((Setup 'foreign-directory-block' $foreign) -ne 0) '没有拒绝已有未知内容的目录'
+    Check (([IO.File]::ReadAllText((Join-Path $foreign '用户文件.txt')) -eq 'keep') -and -not(Test-Path (Join-Path $foreign '.desktop-glass-owner'))) '未知目录遭到改写'
+    $results.Add('拒绝已有未知内容的安装目录')
 
     # 文件占用来自自建文本 fixture；不访问旧的真实安装目录。
     $old=Join-Path $work '旧 安装位置'; New-Item -ItemType Directory -Path $old | Out-Null
