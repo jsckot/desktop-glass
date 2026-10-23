@@ -14,7 +14,7 @@ CreateUninstallRegKey=no
 AppId=DesktopGlass
 #endif
 AppName=Desktop Glass
-AppVersion=0.3.1
+AppVersion=0.4.0
 AppPublisher=Desktop Glass
 DefaultDirName={code:DefaultLocation}
 DisableDirPage=no
@@ -23,12 +23,12 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-MinVersion=10.0.22000
+MinVersion=10.0.22621
 OutputDir={#OutputDir}
 #ifdef SandboxData
-OutputBaseFilename=DesktopGlass-Setup-0.3.1-x64-sandbox
+OutputBaseFilename=DesktopGlass-Setup-0.4.0-x64-sandbox
 #else
-OutputBaseFilename=DesktopGlass-Setup-0.3.1-x64
+OutputBaseFilename=DesktopGlass-Setup-0.4.0-x64
 #endif
 SetupIconFile=..\assets\desktop-glass.ico
 UninstallDisplayIcon={app}\DesktopGlass.exe
