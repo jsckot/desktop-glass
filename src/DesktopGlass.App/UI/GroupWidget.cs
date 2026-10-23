@@ -1,4 +1,4 @@
-using System.Windows.Controls.Primitives;
+﻿using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using DesktopGlass.App.Windows;
 
@@ -14,6 +14,8 @@ internal sealed class GroupWidget : Window
     private readonly int entryCount;
     private readonly Border dropHighlight;
     private readonly WidgetTheme.Material material;
+    private TextBlock heading = null!;
+    private Thumb resizeGrip = null!;
 
     /// <summary>建立一个分组快照；入口或锁定状态变化后由宿主完整重建组件。</summary>
     /// <param name="group">分组外观和 DIP 尺寸；不会由界面直接修改。</param>
@@ -59,22 +61,33 @@ internal sealed class GroupWidget : Window
         dropHighlight = new Border { Margin = new Thickness(5), CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 5)),
             BorderThickness = new Thickness(1.5), BorderBrush = WidgetTheme.Focus, Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
             IsHitTestVisible = false, Visibility = Visibility.Collapsed };
-        layers.Children.Add(dropHighlight); layers.Children.Add(ResizeGrip());
+        layers.Children.Add(dropHighlight); layers.Children.Add(resizeGrip = ResizeGrip());
         material = WidgetTheme.CreateMaterial(group, display, layers); Content = material.Root; ContextMenu = GroupMenu(locked); AllowDrop = !temporary;
         DragOver += (_, e) => ShowDrop(e);
         DragLeave += (_, _) => dropHighlight.Visibility = Visibility.Collapsed;
         Drop += (_, e) => ReceiveDrop(e, entryCount);
+        ApplyAppearance(group);
     }
 
     /// <summary>顶层浮动时切换为系统实时材质；系统不可用时使用中性色底，不伪装为壁纸透视。</summary>
     internal void SetForegroundMaterial(WindowBackdrop.Result result) => material.SetForeground(result.Enabled);
+
+    /// <summary>只更新外观与裁剪提示，不重建窗口、入口或正在进行的几何手势。</summary>
+    internal void ApplyAppearance(Group group)
+    {
+        Title = group.Name; heading.Text = group.Name; material.ApplyAppearance(group);
+        dropHighlight.CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 5));
+        // 标记整体内移到圆弧内部，避免线段跨过右下圆弧造成不对称错觉。
+        var inset = Math.Max(10, group.Radius * (1 - 1 / Math.Sqrt(2)) + 5);
+        resizeGrip.Margin = new Thickness(0, 0, inset, inset);
+    }
 
     private Grid Header(Group group, bool locked)
     {
         var header = new Grid(); header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
         var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-        labels.Children.Add(new TextBlock { Text = group.Name, FontSize = 14, FontWeight = FontWeights.SemiBold,
+        labels.Children.Add(heading = new TextBlock { Text = group.Name, FontSize = 14, FontWeight = FontWeights.SemiBold,
             Foreground = WidgetTheme.Ink, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(1, 0, 8, 2) });
         labels.Children.Add(new TextBlock { Text = temporary ? "显示器暂离" : entryCount + " 个项目" + (locked ? " · 布局已锁定" : ""),
             FontSize = 10.5, Foreground = WidgetTheme.SecondaryInk, Margin = new Thickness(1, 0, 0, 0) });
@@ -131,7 +144,7 @@ internal sealed class GroupWidget : Window
             callbacks.Open(entry.Path); e.Handled = true;
         };
         tile.Drop += (_, e) => ReceiveDrop(e, index);
-        var menu = new ContextMenu(); menu.Items.Add(Menu("打开", () => callbacks.Open(entry.Path)));
+        var menu = AppTheme.CreateContextMenu(); menu.Items.Add(Menu("打开", () => callbacks.Open(entry.Path)));
         menu.Items.Add(Menu("移出分组", () => callbacks.Release(entry.Path), !temporary));
         tile.ContextMenu = menu; return tile;
     }
@@ -150,7 +163,7 @@ internal sealed class GroupWidget : Window
 
     private ContextMenu GroupMenu(bool locked)
     {
-        var menu = new ContextMenu(); menu.Items.Add(Menu("名称与玻璃外观…", callbacks.Edit, !temporary));
+        var menu = AppTheme.CreateContextMenu(); menu.Items.Add(Menu("名称与玻璃外观…", callbacks.Edit, !temporary));
         menu.Items.Add(Menu("新建分组", callbacks.Create)); menu.Items.Add(Menu(locked ? "解锁布局" : "锁定布局", callbacks.ToggleLock));
         menu.Items.Add(new Separator()); menu.Items.Add(Menu("移除分组（保留文件）", callbacks.Remove, !temporary));
         menu.Items.Add(new Separator()); menu.Items.Add(Menu("退出桌面分组", callbacks.Exit)); return menu;
@@ -198,6 +211,7 @@ internal sealed class GroupWidget : Window
 
     private static MenuItem Menu(string text, Action action, bool enabled = true)
     {
-        var item = new MenuItem { Header = text, IsEnabled = enabled }; item.Click += (_, _) => action(); return item;
+        var glyph = text switch { "打开" => "\uE8E5", "移出分组" => "\uE8B5", "新建分组" => "\uE710", "退出桌面分组" => "\uE8AC", _ => text.StartsWith("移除", StringComparison.Ordinal) ? "\uE74D" : text.Contains("锁", StringComparison.Ordinal) ? "\uE72E" : "\uE790" };
+        return AppTheme.MenuItem(text, action, glyph, enabled, text.StartsWith("移除", StringComparison.Ordinal));
     }
 }

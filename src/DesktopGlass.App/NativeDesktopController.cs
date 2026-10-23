@@ -1,4 +1,4 @@
-using Microsoft.Win32;
+﻿using Microsoft.Win32;
 using System.Windows.Threading;
 using DesktopGlass.App.UI;
 using DesktopGlass.App.Windows;
@@ -172,9 +172,9 @@ internal sealed partial class NativeDesktopController : IDisposable
                     CommitBounds = canceled => Execute(() => CommitBounds(item, canceled))
                 };
                 var ordered = group.Entries.Select(path => entries.GetValueOrDefault(path) ?? new DesktopEntry(path, DisplayName(path))).ToArray();
-                var window = new GroupWidget(group, placement.Display, ordered, catalog, workspace.Locked, placement.Temporary, callbacks);
+                var window = new GroupWidget(EffectiveAppearance(group), placement.Display, ordered, catalog, workspace.Locked, placement.Temporary, callbacks);
                 window.Closed += (_, _) => { if (!rebuilding && !stopped) Dispatch(Exit); };
-                item.Host = new WidgetHost(window, bounds, group.Radius, placement.Display.Scale, foreground); widgets.Add(item);
+                item.Host = new WidgetHost(window, bounds, EffectiveAppearance(group).Radius, placement.Display.Scale, foreground); widgets.Add(item);
             }
         }
         finally { rebuilding = false; }
@@ -231,13 +231,16 @@ internal sealed partial class NativeDesktopController : IDisposable
         var editor = new GroupEditor(draft, () =>
         {
             if (stopped) throw new InvalidOperationException("应用已停止，不能保存分组。");
-            var candidate = Copy(workspace); var index = candidate.Groups.FindIndex(g => g.Id == id);
-            if (index < 0) throw new InvalidOperationException("分组已被移除。");
-            // 编辑器只负责外观，保留期间可能变化的入口和布局，避免覆盖新发生的收纳或拖动。
-            candidate.Groups[index].Name = draft.Name; candidate.Groups[index].Tint = draft.Tint; candidate.Groups[index].Radius = draft.Radius;
-            Save(candidate); QueueRender();
-        });
-        editors.Add(id, editor); editor.Topmost = foreground; editor.Closed += (_, _) => editors.Remove(id); editor.Show();
+            try
+            {
+                workspace = AppearanceTransaction(workspace, id, draft, store.Save); manager?.Refresh();
+                appearancePreviews.Remove(id); ApplyGroupAppearance(id);
+            }
+            catch { appearancePreviews.Remove(id); ApplyGroupAppearance(id); throw; }
+        }, previewAppearance: value => PreviewAppearance(id, value));
+        editors.Add(id, editor); editor.Topmost = foreground;
+        editor.Closed += (_, _) => { editors.Remove(id); appearancePreviews.Remove(id); if (!stopped) ApplyGroupAppearance(id); };
+        editor.Show();
     }
 
     private void ToggleLock()
@@ -253,7 +256,7 @@ internal sealed partial class NativeDesktopController : IDisposable
             bounds.Height = Math.Clamp(bounds.Height + dy * item.Display.Scale, Math.Min(160 * item.Display.Scale, item.Display.Height), Math.Min(1600 * item.Display.Scale, item.Display.Height));
         }
         else bounds.Offset(dx * item.Display.Scale, dy * item.Display.Scale);
-        host.SetBounds(bounds, workspace.Groups.Single(g => g.Id == item.GroupId).Radius, item.Display.Scale);
+        host.SetBounds(bounds, EffectiveAppearance(workspace.Groups.Single(g => g.Id == item.GroupId)).Radius, item.Display.Scale);
     }
 
     private void CommitBounds(Presentation item, bool canceled)
@@ -263,7 +266,7 @@ internal sealed partial class NativeDesktopController : IDisposable
         var source = workspace.Groups.SingleOrDefault(g => g.Id == item.GroupId);
         if (source is null || item.Host is null || !item.Host.Alive) return;
         if (!LayoutEditPolicy.CanCommit(canceled, rebuilding, stopped, workspace.Locked, item.Temporary))
-        { item.Host.SetBounds(original, source.Radius, item.Display.Scale); return; }
+        { item.Host.SetBounds(original, EffectiveAppearance(source).Radius, item.Display.Scale); return; }
         try
         {
             var bounds = item.Host.GetBounds(); var center = new Point(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
@@ -278,12 +281,12 @@ internal sealed partial class NativeDesktopController : IDisposable
             {
                 // 同屏只提交几何并复用原 HWND；销毁重建会在松手时露出一帧桌面。
                 item.Host.SetBounds(new Rect(target.Left + group.X * target.Scale, target.Top + group.Y * target.Scale,
-                    group.Width * target.Scale, group.Height * target.Scale), group.Radius, target.Scale);
+                    group.Width * target.Scale, group.Height * target.Scale), EffectiveAppearance(group).Radius, target.Scale);
             }
             else QueueRender();
         }
         catch
-        { item.Host.SetBounds(original, source.Radius, item.Display.Scale); throw; }
+        { item.Host.SetBounds(original, EffectiveAppearance(source).Radius, item.Display.Scale); throw; }
     }
 
     private void Save(Workspace candidate) { store.Save(candidate); workspace = candidate; manager?.Refresh(); }
@@ -333,7 +336,7 @@ internal sealed partial class NativeDesktopController : IDisposable
         var errors = new List<Exception>();
         foreach (var watcher in watchers) { try { watcher.Dispose(); } catch (Exception error) { errors.Add(error); } } watchers.Clear();
         manager?.Finish(); manager = null;
-        foreach (var editor in editors.Values.ToArray()) { try { editor.Close(); } catch (Exception error) { errors.Add(error); } } editors.Clear();
+        foreach (var editor in editors.Values.ToArray()) { try { editor.Close(); } catch (Exception error) { errors.Add(error); } } editors.Clear(); appearancePreviews.Clear();
         foreach (var item in widgets) { try { item.Host?.Dispose(); } catch (Exception error) { errors.Add(error); } } widgets.Clear();
         try { lease.Dispose(); } catch (Exception error) { errors.Add(error); }
         if (tray is not null)

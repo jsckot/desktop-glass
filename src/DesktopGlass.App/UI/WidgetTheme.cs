@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using System.Windows.Media.Effects;
 using System.Windows.Media.Imaging;
 using System.Windows.Interop;
@@ -15,8 +15,15 @@ internal static class WidgetTheme
     private static string wallpaperPath = "";
     private static BitmapImage? wallpaper;
 
-    internal sealed record Material(Grid Root, Grid Desktop)
+    internal sealed record Material(Grid Root, Grid Desktop, Border Frost, Border Outer, Border Inner)
     {
+        internal void ApplyAppearance(Group group)
+        {
+            var frost = (byte)Math.Round(255 * Math.Clamp(.015 + group.Tint * .42, .045, .55));
+            Frost.Background = Frozen(SystemParameters.HighContrast ? SystemColors.WindowColor : Color.FromArgb(frost, 224, 242, 250));
+            Outer.CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 1));
+            Inner.CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 3));
+        }
         internal void SetForeground(bool live)
         {
             Desktop.Visibility = Visibility.Collapsed;
@@ -63,17 +70,17 @@ internal static class WidgetTheme
             surface.SizeChanged += (_, _) => UpdateSample();
         }
         var frost = (byte)Math.Round(255 * Math.Clamp(.015 + group.Tint * .42, .045, .55));
-        surface.Children.Add(new Border { Background = Frozen(SystemParameters.HighContrast ? SystemColors.WindowColor : Color.FromArgb(frost, 224, 242, 250)), IsHitTestVisible = false });
+        var frostLayer = new Border { Background = Frozen(SystemParameters.HighContrast ? SystemColors.WindowColor : Color.FromArgb(frost, 224, 242, 250)), IsHitTestVisible = false }; surface.Children.Add(frostLayer);
         surface.Children.Add(new Border { Background = new LinearGradientBrush(
             Color.FromArgb(35, 255, 255, 255), Color.FromArgb(3, 207, 232, 247), 105), IsHitTestVisible = false });
-        surface.Children.Add(new Border { Margin = new Thickness(1), CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 1)),
+        var outer = new Border { Margin = new Thickness(1), CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 1)),
             BorderThickness = new Thickness(1), BorderBrush = new LinearGradientBrush(
-                Color.FromArgb(235, 255, 255, 255), Color.FromArgb(72, 255, 255, 255), 110), IsHitTestVisible = false });
-        surface.Children.Add(new Border { Margin = new Thickness(3), CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 3)),
+                Color.FromArgb(235, 255, 255, 255), Color.FromArgb(72, 255, 255, 255), 110), IsHitTestVisible = false }; surface.Children.Add(outer);
+        var inner = new Border { Margin = new Thickness(3), CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 3)),
             BorderThickness = new Thickness(.7), BorderBrush = new LinearGradientBrush(
-                Color.FromArgb(12, 24, 72, 95), Color.FromArgb(68, 255, 255, 255), 125), IsHitTestVisible = false });
+                Color.FromArgb(12, 24, 72, 95), Color.FromArgb(68, 255, 255, 255), 125), IsHitTestVisible = false }; surface.Children.Add(inner);
         surface.Children.Add(content);
-        return new Material(surface, desktop);
+        return new Material(surface, desktop, frostLayer, outer, inner);
     }
 
     internal static ControlTemplate TileTemplate()

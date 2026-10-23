@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Windows.Threading;
 
 namespace DesktopGlass.App;
@@ -8,6 +8,7 @@ internal sealed partial class NativeDesktopController
     /// <summary>仅用项目内自建空组验证真实 HWND 在移动、缩放和取消后的生命周期；不收纳任何桌面项。</summary>
     internal static int RunLayoutDiagnostics(string[] args)
     {
+        if (args.Contains("--appearance-only")) return RunAppearanceDiagnostics(args);
         var index = Array.IndexOf(args, "--output");
         if (index < 0 || index + 1 >= args.Length) return 1;
         var output = WidgetDiagnostics.CheckedOutput(args[index + 1]);

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Interop;
@@ -89,6 +89,20 @@ internal sealed class WidgetHost : IDisposable
         if (!Native.SetWindowPos(Handle, foreground ? -1 : 0, point.X, point.Y, width, height, 0x10 | 0x40 | 0x20))
             throw new Win32Exception(Marshal.GetLastPInvokeError(), "组件定位失败。");
         RoundOwnWindow(Handle, width, height, radiusDip, scale);
+        window.UpdateLayout();
+    }
+
+    /// <summary>原位更新外观，保持 HWND、实际矩形和原生桌面层级不变。</summary>
+    /// <param name="appearance">仅使用名称、玻璃浓度和圆角字段。</param>
+    /// <param name="scale">当前显示器 DPI/96。</param>
+    /// <exception cref="InvalidOperationException">组件失效，交由控制器处理重建。</exception>
+    internal void ApplyAppearance(Group appearance, double scale)
+    {
+        window.Dispatcher.VerifyAccess();
+        if (!Alive) throw new InvalidOperationException("组件宿主已失效。");
+        window.ApplyAppearance(appearance);
+        var bounds = GetBounds();
+        RoundOwnWindow(Handle, (int)bounds.Width, (int)bounds.Height, appearance.Radius, scale);
         window.UpdateLayout();
     }
 
