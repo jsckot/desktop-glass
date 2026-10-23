@@ -7,18 +7,21 @@ namespace DesktopGlass.App.UI;
 /// <summary>面板、编辑器与品牌图形共享的轻量视觉语言；交互状态不依赖持续动画。</summary>
 internal static class AppTheme
 {
-    internal static readonly Brush Ink = Brush("#172D3D"), Muted = Brush("#5F7482"), Accent = Brush("#357FA1");
+    internal static readonly Brush Ink = SystemParameters.HighContrast ? SystemColors.WindowTextBrush : Brush("#122C49"),
+        Muted = SystemParameters.HighContrast ? SystemColors.WindowTextBrush : Brush("#667991"),
+        Accent = SystemParameters.HighContrast ? SystemColors.HighlightBrush : Brush("#397FC4");
     internal static SolidColorBrush Brush(string color) { var value = (SolidColorBrush)new BrushConverter().ConvertFromString(color)!; value.Freeze(); return value; }
     internal static TextBlock Text(string text, double size = 13, Brush? color = null) => new()
     { Text = text, FontSize = size, Foreground = color ?? Ink, TextWrapping = TextWrapping.Wrap };
     internal static Button Button(string text, bool primary = false)
     {
-        var button = new Button { Content = text, Padding = new Thickness(17, 10, 17, 10), FontSize = 12,
+        var button = new Button { Content = text, Padding = new Thickness(15, 9, 15, 9), FontSize = 12,
             Background = primary ? Accent : Brushes.White, Foreground = primary ? Brushes.White : Ink,
             BorderBrush = Brush("#CADDE6"), BorderThickness = new Thickness(primary ? 0 : 1),
             Cursor = Cursors.Hand, VerticalContentAlignment = VerticalAlignment.Center };
+        if (SystemParameters.HighContrast) { button.Background = SystemColors.ControlBrush; button.Foreground = SystemColors.ControlTextBrush; button.BorderBrush = SystemColors.ControlTextBrush; button.BorderThickness = new Thickness(1); return button; }
         var border = new FrameworkElementFactory(typeof(Border)); border.Name = "Frame";
-        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(17));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(9));
         foreach (var name in new[] { "Background", "BorderBrush", "BorderThickness", "Padding" })
             border.SetBinding((DependencyProperty)typeof(Border).GetField(name + "Property")!.GetValue(null)!, new Binding(name) { RelativeSource = RelativeSource.TemplatedParent });
         var presenter = new FrameworkElementFactory(typeof(ContentPresenter));
@@ -35,6 +38,59 @@ internal static class AppTheme
         disabled.Setters.Add(new Setter(UIElement.OpacityProperty, .42, "Frame")); template.Triggers.Add(disabled);
         button.HorizontalContentAlignment = HorizontalAlignment.Center;
         button.Template = template; return button;
+    }
+    /// <summary>创建带独立图标列与键盘高亮的轻透命令浮层；高对比度沿用系统菜单。</summary>
+    internal static ContextMenu CreateContextMenu()
+    {
+        var menu = new ContextMenu { FontFamily = new FontFamily("Microsoft YaHei UI"), FontSize = 12, MinWidth = 218 };
+        if (SystemParameters.HighContrast) return menu;
+        menu.Foreground = Ink;
+        menu.Background = Brush("#F5F8FC");
+        menu.BorderBrush = Brush("#E1E9F2");
+        menu.Template = (ControlTemplate)System.Windows.Markup.XamlReader.Parse("""
+            <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="ContextMenu">
+              <Border Padding="10" Background="Transparent">
+                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="13" Padding="5">
+                  <Border.Effect><DropShadowEffect Color="#193653" BlurRadius="16" ShadowDepth="4" Opacity="0.18"/></Border.Effect>
+                  <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                </Border>
+              </Border>
+            </ControlTemplate>
+            """);
+        var separator = new Style(typeof(Separator));
+        separator.Setters.Add(new Setter(Control.TemplateProperty, (ControlTemplate)System.Windows.Markup.XamlReader.Parse("""
+            <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="Separator">
+              <Border Height="1" Margin="34,5,10,5" Background="#DCE5EF"/>
+            </ControlTemplate>
+            """)));
+        menu.Resources.Add(typeof(Separator), separator);
+        return menu;
+    }
+
+    /// <summary>创建统一菜单命令；glyph 使用 Segoe MDL2 Assets 字形，危险操作保留文字含义。</summary>
+    internal static MenuItem MenuItem(string text, Action action, string glyph, bool enabled = true, bool destructive = false)
+    {
+        var item = new MenuItem { Header = text, IsEnabled = enabled };
+        item.Icon = new TextBlock { Text = glyph, FontFamily = new FontFamily("Segoe MDL2 Assets"), FontSize = 14, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center };
+        item.Click += (_, _) => action();
+        if (SystemParameters.HighContrast) return item;
+        item.Foreground = destructive ? Brush("#AA3C48") : Ink;
+        item.Template = (ControlTemplate)System.Windows.Markup.XamlReader.Parse("""
+            <ControlTemplate xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" TargetType="MenuItem">
+              <Border Name="Frame" Background="Transparent" CornerRadius="8" Padding="8,9" BorderThickness="1" BorderBrush="Transparent" Margin="1">
+                <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                  <ContentPresenter Content="{TemplateBinding Icon}" VerticalAlignment="Center"/>
+                  <ContentPresenter Grid.Column="1" Margin="8,0,8,0" ContentSource="Header" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                </Grid>
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Frame" Property="Background" Value="#E2EDF8"/></Trigger>
+                <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="Frame" Property="BorderBrush" Value="#659ACA"/><Setter TargetName="Frame" Property="Background" Value="#E2EDF8"/></Trigger>
+                <Trigger Property="IsEnabled" Value="False"><Setter Property="Foreground" Value="#94A2B3"/></Trigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+            """);
+        return item;
     }
     internal static void StyleSlider(Slider slider)
     {
@@ -74,28 +130,29 @@ internal static class AppTheme
         scroll.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), style); return scroll;
     }
     internal static Border Card(UIElement child, double radius = 20) => new()
-    { Background = Brush("#F8FCFE"), BorderBrush = Brushes.White, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(radius), Child = child };
+    { Background = SystemParameters.HighContrast ? SystemColors.WindowBrush : Brush("#EAF8FCFE"), BorderBrush = SystemParameters.HighContrast ? SystemColors.WindowTextBrush : Brushes.White, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(radius), Child = child };
 
     /// <summary>使用相同矢量几何生成窗口插画和多尺寸程序图标，避免不同入口品牌不一致。</summary>
     /// <param name="size">显示边长，单位 DIP。</param><returns>可缩放的自有玻璃叠片标志。</returns>
     internal static Image Logo(double size)
     {
         var drawing = new DrawingGroup();
-        var rear = new RectangleGeometry(new Rect(13, 15, 65, 67), 20, 20) { Transform = new RotateTransform(-12, 46, 48) };
-        drawing.Children.Add(new GeometryDrawing(new LinearGradientBrush(Color.FromRgb(60, 153, 193), Color.FromRgb(137, 217, 235), 40), null, rear));
-        var front = new RectangleGeometry(new Rect(29, 27, 63, 64), 20, 20);
-        drawing.Children.Add(new GeometryDrawing(new LinearGradientBrush(Color.FromArgb(242, 246, 253, 255), Color.FromArgb(205, 123, 196, 222), 85),
-            new Pen(Brushes.White, 1.4), front));
-        foreach (var r in new[] { new Rect(43, 43, 12, 12), new Rect(63, 43, 12, 12), new Rect(43, 63, 12, 12), new Rect(63, 63, 12, 12) })
-            drawing.Children.Add(new GeometryDrawing(new LinearGradientBrush(Colors.White, Color.FromRgb(122, 184, 206), 80),
-                new Pen(Brush("#C8E8F1"), .7), new RectangleGeometry(r, 4, 4)));
+        LinearGradientBrush Gradient(string start, string end) => new(((SolidColorBrush)Brush(start)).Color, ((SolidColorBrush)Brush(end)).Color, new Point(0, 0), new Point(1, 1));
+        drawing.Children.Add(new GeometryDrawing(Gradient("#173C65", "#091B34"), new Pen(Brush("#395B7B"), 1), new RectangleGeometry(new Rect(5, 5, 90, 90), 23, 23)));
+        var rear = new RectangleGeometry(new Rect(26, 22, 48, 58), 12, 12) { Transform = new RotateTransform(-12, 50, 51) };
+        drawing.Children.Add(new GeometryDrawing(Gradient("#843CA7CE", "#478EDDE7"), new Pen(Brush("#868EDDE7"), 1), rear));
+        // 一条连续折光带构成 G，保留足够大的负空间，托盘尺寸仍可识别。
+        var ribbon = Geometry.Parse("M 73,32 L 63,42 C 59,37 55,35 49,35 C 40,35 34,42 34,51 C 34,61 40,67 50,67 C 55,67 59,66 62,63 L 62,57 L 50,57 L 50,46 L 75,46 L 75,69 C 68,77 60,81 49,81 C 31,81 20,68 20,51 C 20,33 32,21 49,21 C 59,21 67,25 73,32 Z");
+        drawing.Children.Add(new GeometryDrawing(Gradient("#FAFFFFFF", "#9E8EDDE7"), new Pen(Brush("#B3E5F6FF"), .8), ribbon));
+        drawing.Children.Add(new GeometryDrawing(Gradient("#D4EDFAFF", "#4C82BFE7"), null, Geometry.Parse("M 50,46 L 75,46 L 62,57 L 50,57 Z")));
+        drawing.Children.Add(new GeometryDrawing(null, new Pen(Brush("#658EDDE7"), .8), Geometry.Parse("M 18,24 C 18,16 23,12 31,12 L 68,12")));
         drawing.Freeze();
         return new Image { Source = new DrawingImage(drawing), Width = size, Height = size, Stretch = Stretch.Uniform };
     }
     internal static void Apply(Window window)
     {
         window.FontFamily = new FontFamily("Microsoft YaHei UI"); window.Foreground = Ink;
-        window.Background = new LinearGradientBrush(Color.FromRgb(238, 245, 249), Color.FromRgb(225, 238, 245), 105);
+        window.Background = SystemParameters.HighContrast ? SystemColors.WindowBrush : new LinearGradientBrush(Color.FromRgb(239, 244, 250), Color.FromRgb(224, 236, 246), 105);
         window.Icon = Logo(32).Source; window.UseLayoutRounding = true;
     }
 }

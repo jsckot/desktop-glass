@@ -1,5 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="4 4 96 96">
-<defs><linearGradient id="rear" x2="1" y2="1"><stop stop-color="#3c99c1"/><stop offset="1" stop-color="#89d9eb"/></linearGradient><linearGradient id="front" x2=".2" y2="1"><stop stop-color="#f6fdff" stop-opacity=".95"/><stop offset="1" stop-color="#7bc4de" stop-opacity=".8"/></linearGradient><linearGradient id="tile" x2="0" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#7ab8ce"/></linearGradient></defs>
-<rect x="13" y="15" width="65" height="67" rx="20" fill="url(#rear)" transform="rotate(-12 46 48)"/>
-<rect x="29" y="27" width="63" height="64" rx="20" fill="url(#front)" stroke="#fff" stroke-width="1.4"/>
-<g fill="url(#tile)" stroke="#c8e8f1" stroke-width=".7"><rect x="43" y="43" width="12" height="12" rx="4"/><rect x="63" y="43" width="12" height="12" rx="4"/><rect x="43" y="63" width="12" height="12" rx="4"/><rect x="63" y="63" width="12" height="12" rx="4"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="4.5 4.5 91 91">
+  <title>Desktop Glass</title>
+  <desc>深蓝底上的透明叠片，以连续折光带构成字母 G。</desc>
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#173C65"/><stop offset="1" stop-color="#091B34"/></linearGradient>
+    <linearGradient id="rear" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3CA7CE" stop-opacity=".517647"/><stop offset="1" stop-color="#8EDDE7" stop-opacity=".278431"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#FFFFFF" stop-opacity=".980392"/><stop offset="1" stop-color="#8EDDE7" stop-opacity=".619608"/></linearGradient>
+    <linearGradient id="fold" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#EDFAFF" stop-opacity=".831373"/><stop offset="1" stop-color="#82BFE7" stop-opacity=".298039"/></linearGradient>
+  </defs>
+  <rect x="5" y="5" width="90" height="90" rx="23" fill="url(#base)" stroke="#395B7B"/>
+  <rect x="26" y="22" width="48" height="58" rx="12" transform="rotate(-12 50 51)" fill="url(#rear)" stroke="#8EDDE7" stroke-opacity=".52549"/>
+  <path d="M73 32 63 42C59 37 55 35 49 35 40 35 34 42 34 51 34 61 40 67 50 67 55 67 59 66 62 63V57H50V46H75V69C68 77 60 81 49 81 31 81 20 68 20 51 20 33 32 21 49 21 59 21 67 25 73 32Z" fill="url(#glass)" stroke="#E5F6FF" stroke-opacity=".701961" stroke-width=".8"/>
+  <path d="M50 46H75L62 57H50Z" fill="url(#fold)"/>
+  <path d="M18 24C18 16 23 12 31 12H68" fill="none" stroke="#8EDDE7" stroke-opacity=".396078" stroke-width=".8"/>
+</svg>
