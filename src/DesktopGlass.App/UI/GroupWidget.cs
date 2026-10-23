@@ -49,8 +49,7 @@ internal sealed class GroupWidget : Window
         {
             var empty = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
                 IsHitTestVisible = false, Margin = new Thickness(0, 0, 0, 10) };
-            empty.Children.Add(new TextBlock { Text = "+", FontFamily = new FontFamily("Segoe UI"), FontSize = 33,
-                FontWeight = FontWeights.Light, Foreground = WidgetTheme.SecondaryInk, HorizontalAlignment = HorizontalAlignment.Center });
+            empty.Children.Add(AppTheme.Logo(38));
             empty.Children.Add(new TextBlock { Text = temporary ? "接回显示器后继续整理" : "拖入快捷方式或文件", FontSize = 12,
                 Foreground = WidgetTheme.SecondaryInk, Margin = new Thickness(0, 7, 0, 0), TextAlignment = TextAlignment.Center });
             body.Children.Add(empty);
