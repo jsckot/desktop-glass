@@ -62,26 +62,27 @@ internal sealed class DesktopLayer : IDisposable
         window.Dispatcher.VerifyAccess();
         if (disposed || !IsWindow(handle) || !IsWindow(desktopRoot)) return;
         EnsureOwnWindow();
-        if (AtDesktopLayer()) return;
+        if (AtDesktopLayer()) { WindowBackdrop.Sync(window); return; }
         // Progman 保持系统桌面底部，先下放自己并检查实际顺序，避免引用附近受保护的 IME/系统前驱。
         // 不将 Explorer 设为 owner：恢复最小化 owned 窗口可能连带提升 owner。
         if (!SetWindowPos(handle, 1, 0, 0, 0, 0, 0x213))
             throw new Win32Exception(Marshal.GetLastPInvokeError(), $"自有组件桌面层定位失败：HWND={handle:X}，桌面={desktopRoot:X}。");
-        if (AtDesktopLayer()) return;
+        if (AtDesktopLayer()) { WindowBackdrop.Sync(window); return; }
         // 普通替身或非底部 WorkerW 不具备 Progman 的底部约束；此时才需显式插入根之前。
         var above = GetWindow(desktopRoot, 3);
-        while (Layers.ContainsKey(above)) above = GetWindow(above, 3);
+        while (Layers.ContainsKey(above) || WindowBackdrop.IsBackdropWindow(above)) above = GetWindow(above, 3);
         if (above != 0 && (GetWindowLongPtrW(above, -20).ToInt64() & TopmostStyle) != 0) above = 0;
         if (!SetWindowPos(handle, above, 0, 0, 0, 0, 0x213))
             throw new Win32Exception(Marshal.GetLastPInvokeError(), $"自有组件桌面根前定位失败：HWND={handle:X}，前驱={above:X}。");
         if (!AtDesktopLayer()) throw new InvalidOperationException("自有组件未能进入桌面根上方的窗口层。");
+        WindowBackdrop.Sync(window);
     }
 
     private bool AtDesktopLayer()
     {
         // 同产品组件可有任意内部顺序；忽略隐藏辅助窗，避免组件之间反复提升。
         var below = GetWindow(handle, 2);
-        while (below != 0 && (Layers.ContainsKey(below) || (!IsWindowVisible(below) && below != desktopRoot))) below = GetWindow(below, 2);
+        while (below != 0 && (Layers.ContainsKey(below) || WindowBackdrop.IsBackdropWindow(below) || (!IsWindowVisible(below) && below != desktopRoot))) below = GetWindow(below, 2);
         return below == desktopRoot;
     }
 
@@ -107,7 +108,8 @@ internal sealed class DesktopLayer : IDisposable
             return;
         }
         // 自身 SetWindowPos 产生的 reorder 不入队；只观察桌面根重排与自有窗口显示变化。
-        if (Layers.TryGetValue(target, out var own))
+        var content = WindowBackdrop.ContentHandleFor(target);
+        if (Layers.TryGetValue(content != 0 ? content : target, out var own))
         {
             if (kind is ShowEvent or HideEvent or MinimizeStartEvent or MinimizeEndEvent) own.Queue();
             return;

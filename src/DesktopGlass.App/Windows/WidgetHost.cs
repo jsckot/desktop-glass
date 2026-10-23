@@ -93,6 +93,7 @@ internal sealed class WidgetHost : IDisposable
         RoundOwnWindow(Handle, width, height, radiusDip, scale);
         window.UpdateLayout();
         desktopLayer?.Place();
+        WindowBackdrop.Sync(window);
     }
 
     /// <summary>原位更新外观，保持 HWND、实际矩形和原生桌面层级不变。</summary>
@@ -107,6 +108,7 @@ internal sealed class WidgetHost : IDisposable
         var bounds = GetBounds();
         RoundOwnWindow(Handle, (int)bounds.Width, (int)bounds.Height, WidgetGeometry.Radius, scale);
         window.UpdateLayout();
+        WindowBackdrop.Sync(window);
     }
 
     /// <summary>原位改变呈现范围；悬停仅改变自有 HWND，不持久化布局或改变文件租约。</summary>

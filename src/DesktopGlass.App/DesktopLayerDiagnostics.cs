@@ -18,6 +18,12 @@ internal static class DesktopLayerDiagnostics
         if (index < 0 || index + 1 >= args.Length) throw new ArgumentException("需要 --output 路径。");
         var output = WidgetDiagnostics.CheckedOutput(args[index + 1]);
         var passed = new List<string>();
+        var foregroundTrace = new List<object>();
+        void TraceForeground(string stage)
+        {
+            var handle = GetForegroundWindow(); Native.GetWindowThreadProcessId(handle, out var process);
+            foregroundTrace.Add(new { Stage = stage, Handle = handle.ToInt64(), Process = process, Own = process == Environment.ProcessId });
+        }
         var windows = new List<Window>();
         Application? app = null;
         DesktopLayer? layer = null, second = null;
@@ -49,6 +55,7 @@ internal static class DesktopLayerDiagnostics
             // 刻意构造错误层级，让诊断在没有桌面层管理器时必然失败。
             Position(appHandle, 0); Position(anchorHandle, appHandle); Position(widgetHandle, 0);
             var foreground = GetForegroundWindow();
+            TraceForeground("before-layer");
             layer = new DesktopLayer(widget, anchorHandle); layer.Place();
             Check(Above(appHandle, widgetHandle) && Above(widgetHandle, anchorHandle), "组件位于普通应用下、桌面上");
             Check(GetForegroundWindow() == foreground, "构造和定位不抢前台");
@@ -66,9 +73,13 @@ internal static class DesktopLayerDiagnostics
             ShowWindow(widgetHandle, 0); Wait();
             Check(IsWindowVisible(widgetHandle), "仍注册且需显示的组件在原生隐藏后恢复");
             Check(Above(appHandle, anchorHandle), "原生隐藏恢复不提升桌面 owner");
-            ShowWindow(widgetHandle, 6);
+            TraceForeground("before-native-minimize");
+            // SW_MINIMIZE(6) 会主动激活下一顶层窗，不能用它检验“不抢前台”；7 保留最小化但不激活。
+            ShowWindow(widgetHandle, 7);
+            TraceForeground("after-native-minimize");
             Check(Above(appHandle, anchorHandle), "原生最小化动作不提升桌面 owner");
             Wait();
+            TraceForeground("after-minimize-recovery");
             Check(IsWindowVisible(widgetHandle) && !IsIconic(widgetHandle), "仍注册且需显示的组件在原生最小化后恢复");
             Check(Above(appHandle, anchorHandle), "原生最小化恢复不提升桌面 owner");
             Position(widgetHandle, 0); layer.Place();
@@ -85,6 +96,7 @@ internal static class DesktopLayerDiagnostics
             Check(DesktopLayer.RegisteredCount == 0 && DesktopLayer.HookCount == 0, "释放最后组件卸载所有钩子");
             Wait();
             Check(!IsWindowVisible(widgetHandle), "挂起恢复回调在注销后不会复活窗口");
+            TraceForeground("before-final-focus-check");
             Check(GetForegroundWindow() == foreground, "所有非激活窗口测试保持用户前台");
             widget.Close(); Wait();
             Check(!IsWindow(widgetHandle), "关闭后没有残留自有 HWND");
@@ -93,12 +105,12 @@ internal static class DesktopLayerDiagnostics
             ShowWindow(Handle(closing), 0); closing.Close(); Wait();
             Check(DesktopLayer.RegisteredCount == 0 && DesktopLayer.HookCount == 0, "窗口直接关闭时注销且不复活");
             File.WriteAllText(output, JsonSerializer.Serialize(new { Passed = true, Tests = passed,
-                LeaseAcquired = false, RealDesktopItemsCollected = 0, RealWinDTested = false }));
+                ForegroundTrace = foregroundTrace, LeaseAcquired = false, RealDesktopItemsCollected = 0, RealWinDTested = false }));
             return 0;
         }
         catch (Exception error)
         {
-            File.WriteAllText(output, JsonSerializer.Serialize(new { Passed = false, Tests = passed, Error = error.ToString() }));
+            File.WriteAllText(output, JsonSerializer.Serialize(new { Passed = false, Tests = passed, ForegroundTrace = foregroundTrace, Error = error.ToString() }));
             return 1;
         }
         finally
