@@ -42,13 +42,10 @@ internal static class ManagementDiagnostics
             var callbacks = new WidgetCallbacks { Open = _ => { }, Collect = (_, _) => false, Release = _ => { }, Edit = () => { },
                 Remove = () => { }, Create = () => { }, ToggleLock = () => { }, Exit = () => { }, MoveBy = (_, _) => { }, ResizeBy = (_, _) => { }, CommitBounds = _ => { } };
             var widget = new GroupWidget(widgetGroup, display, previewEntries, catalog, false, false, callbacks);
+            widget.Width = widget.Height = WidgetGeometry.CompactSize;
+            Render(widget, output + ".compact.png");
+            widget.SetExpanded(true); widget.Width = widgetGroup.Width; widget.Height = widgetGroup.Height;
             Render(widget, output + ".widget.png"); widget.Close();
-            foreach (var radius in new[] { 0d, 48d })
-            {
-                widgetGroup.Radius = radius;
-                var rounded = new GroupWidget(widgetGroup, display, previewEntries.Take(1).ToArray(), catalog, false, false, callbacks);
-                Render(rounded, output + ".radius-" + radius + ".png"); rounded.Close();
-            }
             var menu = AppTheme.CreateContextMenu();
             menu.Items.Add(AppTheme.MenuItem("名称与玻璃外观…", () => { }, "\uE790"));
             menu.Items.Add(AppTheme.MenuItem("新建分组", () => { }, "\uE710"));

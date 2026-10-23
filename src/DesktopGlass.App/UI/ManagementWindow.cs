@@ -153,7 +153,10 @@ internal sealed class ManagementWindow : Window
             title.TextWrapping = TextWrapping.NoWrap; title.TextTrimming = TextTrimming.CharacterEllipsis; title.ToolTip = group.Name;
             details.Children.Add(title);
             var status = AppTheme.Text(group.Entries.Count + " 个项目 · " + (!connected ? "原显示器未连接" : group.DesktopVisible ? "正在显示" : "已暂停"), 11, AppTheme.Muted);
-            status.Margin = new Thickness(0, 6, 0, 0); details.Children.Add(status); box.Children.Add(details);
+            status.Margin = new Thickness(0, 6, 0, 0); details.Children.Add(status);
+            var identity = new Grid(); identity.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(55) }); identity.ColumnDefinitions.Add(new ColumnDefinition());
+            var mark = AppTheme.GroupMark(40); mark.HorizontalAlignment = HorizontalAlignment.Left; identity.Children.Add(mark);
+            Grid.SetColumn(details,1); identity.Children.Add(details); box.Children.Add(identity);
             var appearance = AppTheme.Button("外观"); appearance.Padding = new Thickness(12,7,12,7); appearance.Margin = new Thickness(0,0,7,0); appearance.Click += (_, _) => edit(group.Id);
             actions.Children.Add(appearance); actions.Children.Add(toggleButton);
             var more = AppTheme.Button("⋯"); more.FontSize = 18; more.Padding = new Thickness(11,3,11,3); more.Margin = new Thickness(7,0,0,0); more.ToolTip = "更多分组操作";
@@ -170,9 +173,12 @@ internal sealed class ManagementWindow : Window
     {
         var body = Page("外观与布局", "每个分组各有边界，桌面保留自己的底色。");
         var title = AppTheme.Text("按分组调整玻璃", 18); title.Margin = new Thickness(0, 8, 0, 10); body.Children.Add(title);
-        body.Children.Add(AppTheme.Text("在分组的“外观”中调整玻璃浓度、圆角与尺寸。拖动滑块即可在桌面预览，保存后保留设置。", 13, AppTheme.Muted));
+        body.Children.Add(AppTheme.Text("分组统一使用轻圆角的方形轮廓。在“外观”中调整名称与玻璃浓度，拖动滑块即时预览，保存后保留设置。", 13, AppTheme.Muted));
         var configure = AppTheme.Button("选择要调整的分组"); configure.HorizontalAlignment = HorizontalAlignment.Left; configure.Margin = new Thickness(0,18,0,26); configure.Click += (_, _) => { page = "分组"; Refresh(); }; body.Children.Add(configure);
         body.Children.Add(new Border { Height = 1, Background = AppTheme.Brush("#DCE5EF"), Margin = new Thickness(0,0,0,24) });
+        body.Children.Add(AppTheme.Text("经过时展开，离开后收起",18));
+        var hoverNote = AppTheme.Text("平时显示名称和少量图标预览。鼠标进入后展开完整网格，离开后自动收起；拖拽文件或打开菜单时保持展开。",13,AppTheme.Muted);
+        hoverNote.Margin = new Thickness(0,10,0,24); body.Children.Add(hoverNote);
         body.Children.Add(AppTheme.Text("固定桌面布局", 18));
         var layoutNote = AppTheme.Text(snapshot().Locked ? "布局已锁定，避免误拖或调整分组大小。" : "布局未锁定，可以拖动分组及调整尺寸。", 13, AppTheme.Muted); layoutNote.Margin = new Thickness(0,10,0,0); body.Children.Add(layoutNote);
         var locking = AppTheme.Button(snapshot().Locked ? "解锁桌面布局" : "锁定桌面布局", true); locking.HorizontalAlignment = HorizontalAlignment.Left;

@@ -1,4 +1,4 @@
-﻿using DesktopGlass.App.UI;
+using DesktopGlass.App.UI;
 namespace DesktopGlass.App;
 
 internal sealed partial class NativeDesktopController
@@ -23,10 +23,10 @@ internal sealed partial class NativeDesktopController
         foreach (var presentation in widgets.Where(w => w.GroupId == id)) presentation.Host?.ApplyAppearance(value, presentation.Display.Scale);
     }
 
-    /// <summary>仅提交三个外观字段；以最新工作区为基准保留编辑期间发生的布局和入口变化。</summary>
+    /// <summary>仅提交名称及浓度，保留历史圆角字段；以最新工作区为基准保留编辑期间发生的布局和入口变化。</summary>
     /// <param name="source">最后成功保存的工作区。</param>
     /// <param name="id">仍然存在的目标分组标识。</param>
-    /// <param name="draft">名称、浓度和圆角草稿，其余字段忽略。</param>
+    /// <param name="draft">名称及浓度草稿，其余字段忽略。</param>
     /// <param name="save">持久化回调；失败异常原样传播，原工作区不变。</param>
     /// <returns>成功持久化的独立工作区。</returns>
     /// <exception cref="InvalidOperationException">分组已移除，拒绝复活旧草稿。</exception>
@@ -34,7 +34,7 @@ internal sealed partial class NativeDesktopController
     {
         var candidate = Copy(source); var target = candidate.Groups.SingleOrDefault(g => g.Id == id)
             ?? throw new InvalidOperationException("分组已被移除。");
-        target.Name = draft.Name; target.Tint = draft.Tint; target.Radius = draft.Radius;
+        target.Name = draft.Name; target.Tint = draft.Tint;
         candidate.Validate(); save(candidate); return candidate;
     }
 }

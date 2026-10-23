@@ -1,4 +1,4 @@
-﻿using Microsoft.Win32;
+using Microsoft.Win32;
 using System.Windows.Threading;
 using DesktopGlass.App.UI;
 using DesktopGlass.App.Windows;
@@ -174,7 +174,11 @@ internal sealed partial class NativeDesktopController : IDisposable
                 var ordered = group.Entries.Select(path => entries.GetValueOrDefault(path) ?? new DesktopEntry(path, DisplayName(path))).ToArray();
                 var window = new GroupWidget(EffectiveAppearance(group), placement.Display, ordered, catalog, workspace.Locked, placement.Temporary, callbacks);
                 window.Closed += (_, _) => { if (!rebuilding && !stopped) Dispatch(Exit); };
-                item.Host = new WidgetHost(window, bounds, EffectiveAppearance(group).Radius, placement.Display.Scale, foreground); widgets.Add(item);
+                var display = placement.Display;
+                var anchor = placement.Temporary ? bounds.Location : new Point(
+                    display.Left + Math.Clamp(group.X * display.Scale, 0, Math.Max(0, display.Width - WidgetGeometry.CompactSize * display.Scale)),
+                    display.Top + Math.Clamp(group.Y * display.Scale, 0, Math.Max(0, display.Height - WidgetGeometry.CompactSize * display.Scale)));
+                item.Host = new WidgetHost(window, bounds, WidgetGeometry.Radius, display.Scale, foreground, anchor); widgets.Add(item);
             }
         }
         finally { rebuilding = false; }
@@ -249,14 +253,14 @@ internal sealed partial class NativeDesktopController : IDisposable
     private void PreviewBounds(Presentation item, double dx, double dy, bool resize)
     {
         if (!LayoutEditPolicy.CanCommit(false, rebuilding, stopped, workspace.Locked, item.Temporary)) return;
-        var host = item.Host!; var bounds = host.GetBounds(); if (item.GestureStart is null) { item.GestureStart = bounds; item.Resizing = resize; }
+        var host = item.Host!; host.SetExpanded(true); var bounds = host.GetBounds(); if (item.GestureStart is null) { item.GestureStart = bounds; item.Resizing = resize; }
         if (resize)
         {
             bounds.Width = Math.Clamp(bounds.Width + dx * item.Display.Scale, Math.Min(240 * item.Display.Scale, item.Display.Width), Math.Min(2000 * item.Display.Scale, item.Display.Width));
             bounds.Height = Math.Clamp(bounds.Height + dy * item.Display.Scale, Math.Min(160 * item.Display.Scale, item.Display.Height), Math.Min(1600 * item.Display.Scale, item.Display.Height));
         }
         else bounds.Offset(dx * item.Display.Scale, dy * item.Display.Scale);
-        host.SetBounds(bounds, EffectiveAppearance(workspace.Groups.Single(g => g.Id == item.GroupId)).Radius, item.Display.Scale);
+        host.SetBounds(bounds, WidgetGeometry.Radius, item.Display.Scale);
     }
 
     private void CommitBounds(Presentation item, bool canceled)
@@ -266,7 +270,7 @@ internal sealed partial class NativeDesktopController : IDisposable
         var source = workspace.Groups.SingleOrDefault(g => g.Id == item.GroupId);
         if (source is null || item.Host is null || !item.Host.Alive) return;
         if (!LayoutEditPolicy.CanCommit(canceled, rebuilding, stopped, workspace.Locked, item.Temporary))
-        { item.Host.SetBounds(original, EffectiveAppearance(source).Radius, item.Display.Scale); return; }
+        { item.Host.SetBounds(original, WidgetGeometry.Radius, item.Display.Scale); return; }
         try
         {
             var bounds = item.Host.GetBounds(); var center = new Point(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2);
@@ -274,19 +278,21 @@ internal sealed partial class NativeDesktopController : IDisposable
             var candidate = Copy(workspace); var group = candidate.Groups.Single(g => g.Id == item.GroupId);
             group.DisplayId = target.Id; group.Width = resized ? Math.Clamp(bounds.Width / item.Display.Scale, 240, 2000) : source.Width;
             group.Height = resized ? Math.Clamp(bounds.Height / item.Display.Scale, 160, 1600) : source.Height;
-            group.X = Math.Clamp((bounds.Left - target.Left) / target.Scale, 0, Math.Max(0, target.Width / target.Scale - group.Width));
-            group.Y = Math.Clamp((bounds.Top - target.Top) / target.Scale, 0, Math.Max(0, target.Height / target.Scale - group.Height));
+            // 只提交用户手势的增量，悬停展开为避开屏边产生的夹紧偏移不属于布局。
+            var anchor = item.Host.Anchor + (resized ? new Vector() : bounds.Location - original.Location);
+            group.X = Math.Clamp((anchor.X - target.Left) / target.Scale, 0, Math.Max(0, target.Width / target.Scale - WidgetGeometry.CompactSize));
+            group.Y = Math.Clamp((anchor.Y - target.Top) / target.Scale, 0, Math.Max(0, target.Height / target.Scale - WidgetGeometry.CompactSize));
             Save(candidate);
             if (target.Id == item.Display.Id && target.Scale == item.Display.Scale)
             {
                 // 同屏只提交几何并复用原 HWND；销毁重建会在松手时露出一帧桌面。
-                item.Host.SetBounds(new Rect(target.Left + group.X * target.Scale, target.Top + group.Y * target.Scale,
-                    group.Width * target.Scale, group.Height * target.Scale), EffectiveAppearance(group).Radius, target.Scale);
+                item.Host.UpdatePresentation(new Size(group.Width * target.Scale, group.Height * target.Scale),
+                    new Point(target.Left + group.X * target.Scale, target.Top + group.Y * target.Scale));
             }
             else QueueRender();
         }
         catch
-        { item.Host.SetBounds(original, EffectiveAppearance(source).Radius, item.Display.Scale); throw; }
+        { item.Host.SetBounds(original, WidgetGeometry.Radius, item.Display.Scale); throw; }
     }
 
     private void Save(Workspace candidate) { store.Save(candidate); workspace = candidate; manager?.Refresh(); }

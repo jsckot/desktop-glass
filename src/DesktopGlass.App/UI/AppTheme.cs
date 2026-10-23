@@ -149,6 +149,23 @@ internal static class AppTheme
         drawing.Freeze();
         return new Image { Source = new DrawingImage(drawing), Width = size, Height = size, Stretch = Stretch.Uniform };
     }
+    /// <summary>以统一轻圆角的四格玻璃图形提示分组容器，不替换文件自身图标。</summary>
+    /// <param name="size">图形边长，单位 DIP。</param><returns>可随布局缩放的分组标记。</returns>
+    internal static Image GroupMark(double size)
+    {
+        var drawing = new DrawingGroup();
+        var highContrast = SystemParameters.HighContrast;
+        drawing.Children.Add(new GeometryDrawing(highContrast ? SystemColors.WindowBrush :
+            new LinearGradientBrush(Color.FromRgb(246,250,254), Color.FromRgb(210,227,239), 70),
+            new Pen(highContrast ? SystemColors.WindowTextBrush : Brush("#B6CDDF"), 1), new RectangleGeometry(new Rect(1,1,46,46), 7,7)));
+        foreach (var position in new[] { new Point(10,10), new Point(27,10), new Point(10,27), new Point(27,27) })
+            drawing.Children.Add(new GeometryDrawing(highContrast ? SystemColors.WindowTextBrush :
+                new LinearGradientBrush(Color.FromRgb(128,173,206), Color.FromRgb(65,116,155), 80),
+                null, new RectangleGeometry(new Rect(position,new Size(11,11)),3,3)));
+        drawing.Freeze();
+        return new Image { Source = new DrawingImage(drawing), Width = size, Height = size, Stretch = Stretch.Uniform };
+    }
+
     internal static void Apply(Window window)
     {
         window.FontFamily = new FontFamily("Microsoft YaHei UI"); window.Foreground = Ink;

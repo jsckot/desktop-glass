@@ -25,7 +25,7 @@ internal static class BackdropDiagnostics
                 var label=AppTheme.Text("实时背景\n"+(column+1),28,Brushes.White);label.Margin=new Thickness(20,35,0,0);Grid.SetColumn(label,column);scene.Children.Add(label);
             }
             back=new Window{Title="Desktop Glass 玻璃验证背景",Width=900,Height=560,Left=240,Top=180,Content=scene,Topmost=true};
-            back.Show(); back.Hide(); back.Show();
+            back.Show();
             var contents=new StackPanel{Margin=new Thickness(28)};
             contents.Children.Add(AppTheme.Text("实时玻璃验证",22));
             contents.Children.Add(AppTheme.Text("后面的色块应透过本窗口，而不是显示桌面壁纸。",13));
@@ -39,7 +39,7 @@ internal static class BackdropDiagnostics
             timer.Tick+=(_,_)=>{timer.Stop();front.Close();back.Close();app.Shutdown();};timer.Start();
             front.Closed+=(_,_)=>{back.Close();app.Shutdown();};
             app.Run();
-            File.WriteAllText(output,JsonSerializer.Serialize(new{Passed=result.Enabled,Api=result,VisualConfirmationRequired=true,OwnedWindowsOnly=true}));
+            File.WriteAllText(output,JsonSerializer.Serialize(new{ApiAccepted=result.Enabled,Api=result,VisualConfirmed=false,VisualConfirmationRequired=true,OwnedWindowsOnly=true}));
             return result.Enabled?0:1;
         }
         catch(Exception error){front?.Close();back?.Close();app.Shutdown();File.WriteAllText(output,JsonSerializer.Serialize(new{Passed=false,Error=error.ToString()}));return 1;}

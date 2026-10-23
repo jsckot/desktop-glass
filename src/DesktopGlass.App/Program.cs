@@ -24,6 +24,9 @@ internal static class Program
             if(args.Length==3 && args[0]=="--hold-directory"){Environment.CurrentDirectory=args[1];File.WriteAllText(args[2],"ready");Thread.Sleep(30000);return 0;}
             if(args.Contains("--native-item-test") || args.Contains("--native-item-crash-child"))return NativeItemDiagnostics.Run(args);
             if(args.Contains("--backdrop-probe"))return BackdropDiagnostics.Run(args);
+            if(args.Contains("--desktop-layer-tests"))return DesktopLayerDiagnostics.Run(args);
+            if(args.Contains("--hover-tests"))return NativeDesktopController.RunHoverDiagnostics(args);
+            if(args.Contains("--appearance-tests"))return NativeDesktopController.RunAppearanceDiagnostics(args);
             if(args.Contains("--layout-lifecycle-tests"))return NativeDesktopController.RunLayoutDiagnostics(args);
             if(args.Contains("--render-management"))return ManagementDiagnostics.Run(args);
             if(args.Contains("--cleanup-state-tests"))return UninstallStateDiagnostics.Run(args);

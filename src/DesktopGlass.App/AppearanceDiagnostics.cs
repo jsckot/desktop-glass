@@ -1,4 +1,4 @@
-﻿using System.Runtime.InteropServices;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
@@ -37,7 +37,7 @@ internal sealed partial class NativeDesktopController
                 Require(!c.lease.Alive, "隔离诊断意外取得租约");
             });
             Test("编辑中移动及取消保留预览", () => {
-                var item=c.widgets[0]; var bounds=host.GetBounds(); c.PreviewBounds(item, 25, 10, false); c.CommitBounds(item, true);
+                var item=c.widgets[0]; host.SetExpanded(true); var bounds=host.GetBounds(); c.PreviewBounds(item, 25, 10, false); c.CommitBounds(item, true);
                 Require(host.GetBounds()==bounds && c.EffectiveAppearance(c.workspace.Groups[0]).Radius==48, "取消拖动丢失外观覆盖");
             });
             Test("重建与隐藏再显示保留独立覆盖", () => {
@@ -56,20 +56,20 @@ internal sealed partial class NativeDesktopController
                 catch(IOException) { Require(source.Groups[0].Name=="第一组", "保存失败污染源状态"); }
                 source.Groups[0].Entries.Clear();
                 c.workspace=AppearanceTransaction(source,id,draft,c.store.Save);
-                Require(new WorkspaceStore(profile).Load().Groups[0].Radius==33, "外观未持久化");
+                Require(new WorkspaceStore(profile).Load().Groups[0].Tint==.6 && new WorkspaceStore(profile).Load().Groups[0].Radius==source.Groups[0].Radius, "外观未持久化或覆盖历史圆角");
             });
             Test("关闭取消清理覆盖并恢复最新保存外观", () => {
                 c.EditGroup(id); Pump(); var editor=c.editors[id];
-                var sliders=Descendants(editor).OfType<Slider>().ToArray(); sliders[0].Value=.82; sliders[1].Value=48; Pump();
-                Require(c.EffectiveAppearance(c.workspace.Groups[0]).Radius==48, "编辑器滑块未回调");
-                editor.Close(); Pump(); Require(!c.appearancePreviews.ContainsKey(id) && c.EffectiveAppearance(c.workspace.Groups[0]).Radius==33, "关闭未恢复保存外观");
+                var sliders=Descendants(editor).OfType<Slider>().ToArray(); sliders[0].Value=.82; Pump();
+                Require(c.EffectiveAppearance(c.workspace.Groups[0]).Tint==.82, "编辑器滑块未回调");
+                editor.Close(); Pump(); Require(!c.appearancePreviews.ContainsKey(id) && c.EffectiveAppearance(c.workspace.Groups[0]).Tint==.6, "关闭未恢复保存外观");
             });
             Test("保存失败保留输入及一致预览且工作区不变", () => {
                 var draft=CopyGroup(c.workspace.Groups[0]);
                 var editor=new GroupEditor(draft,()=>throw new IOException("故障注入"),previewAppearance:value=>c.PreviewAppearance(id,value));
-                editor.Show(); Pump(); var sliders=Descendants(editor).OfType<Slider>().ToArray(); sliders[1].Value=48;
+                editor.Show(); Pump(); var sliders=Descendants(editor).OfType<Slider>().ToArray(); sliders[0].Value=.81;
                 Descendants(editor).OfType<Button>().Single(b=>Equals(b.Content,"保存更改")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
-                Require(sliders[1].Value==48 && draft.Radius==33 && c.EffectiveAppearance(c.workspace.Groups[0]).Radius==48 && c.workspace.Groups[0].Radius==33,"保存失败未保留输入对应的预览或污染工作区");
+                Require(sliders[0].Value==.81 && draft.Tint==.6 && c.EffectiveAppearance(c.workspace.Groups[0]).Tint==.81 && c.workspace.Groups[0].Tint==.6,"保存失败未保留输入对应的预览或污染工作区");
                 Require(Descendants(editor).OfType<TextBlock>().Any(t=>t.Text.Contains("故障注入")),"保存失败未显示原因");
                 editor.Close(); c.appearancePreviews.Remove(id); c.ApplyGroupAppearance(id);
             });
@@ -90,26 +90,27 @@ internal sealed partial class NativeDesktopController
             });
             Test("保存按钮持久化并保留HWND，取消按钮恢复外观", () => {
                 c.EditGroup(id); Pump(); var editor=c.editors[id]; var handle=c.widgets[0].Host!.Handle;
-                var sliders=Descendants(editor).OfType<Slider>().ToArray(); sliders[0].Value=.7; sliders[1].Value=27;
+                var sliders=Descendants(editor).OfType<Slider>().ToArray(); sliders[0].Value=.7;
                 Descendants(editor).OfType<Button>().Single(b=>Equals(b.Content,"保存更改")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
                 Require(!c.editors.ContainsKey(id) && !c.appearancePreviews.ContainsKey(id) && c.widgets[0].Host!.Handle==handle,"保存重建HWND或残留草稿");
-                Require(new WorkspaceStore(profile).Load().Groups[0].Radius==27 && c.workspace.Groups[0].X==101,"保存按钮未持久化或覆盖布局");
-                c.EditGroup(id); Pump(); editor=c.editors[id]; Descendants(editor).OfType<Slider>().Last().Value=48;
+                Require(new WorkspaceStore(profile).Load().Groups[0].Tint==.7 && c.workspace.Groups[0].X==101,"保存按钮未持久化或覆盖布局");
+                c.EditGroup(id); Pump(); editor=c.editors[id]; Descendants(editor).OfType<Slider>().Last().Value=.8;
                 Descendants(editor).OfType<Button>().Single(b=>Equals(b.Content,"取消")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Pump();
-                Require(c.EffectiveAppearance(c.workspace.Groups[0]).Radius==27 && !c.appearancePreviews.ContainsKey(id),"取消按钮未恢复外观");
+                Require(c.EffectiveAppearance(c.workspace.Groups[0]).Tint==.7 && !c.appearancePreviews.ContainsKey(id),"取消按钮未恢复外观");
             });
             Test("材质边线与缩放标记位于圆弧内部", () => {
                 c.PreviewAppearance(id,new Group{Name="材质验证",Tint=.85,Radius=48}); Pump();
                 var visual=(GroupWidget)System.Windows.Interop.HwndSource.FromHwnd(c.widgets[0].Host!.Handle)!.RootVisual;
+                c.widgets[0].Host!.SetExpanded(true); Pump();
                 var root=(Grid)visual.Content;
                 var borders=root.Children.OfType<Border>().Where(b=>b.BorderThickness.Left>0).ToArray();
-                Require(borders.Length==2 && borders[0].CornerRadius.TopLeft==47 && borders[1].CornerRadius.BottomRight==45,"边线未随预览同步");
+                Require(borders.Length==2 && borders[0].CornerRadius.TopLeft==11 && borders[1].CornerRadius.BottomRight==9,"边线未随预览同步");
                 Require(visual.Title=="材质验证","标题未原位更新");
                 var frost=(SolidColorBrush)root.Children.OfType<Border>().First().Background;
-                Require(frost.Color.A==(byte)Math.Round(255*(.015+.85*.42)),"玻璃浓度未原位更新");
+                Require(frost.Color.A==(byte)Math.Round(255*(.035+.85*.32)),"玻璃浓度未原位更新");
                 var grip=Descendants(root).OfType<Thumb>().Single(t=>t.Width==22);
                 var rectangle=grip.TransformToAncestor(root).TransformBounds(new Rect(0,0,grip.ActualWidth,grip.ActualHeight));
-                var clip=new RectangleGeometry(new Rect(0,0,root.ActualWidth,root.ActualHeight),48,48);
+                var clip=new RectangleGeometry(new Rect(0,0,root.ActualWidth,root.ActualHeight),12,12);
                 Require(clip.FillContains(rectangle.BottomRight) && clip.FillContains(rectangle.TopRight) && clip.FillContains(rectangle.BottomLeft),"缩放标记穿过弧线");
             });
             Test("最大圆角原生区域与客户区几何", () => {

@@ -1,4 +1,4 @@
-﻿using DesktopGlass.App.Windows;
+using DesktopGlass.App.Windows;
 
 namespace DesktopGlass.App.UI;
 
@@ -20,7 +20,7 @@ internal sealed class GroupEditor : Window
         FontFamily = new FontFamily("Microsoft YaHei UI"); ShowInTaskbar = false;
         var body = new StackPanel { Margin = new Thickness(26, 24, 26, 23) };
         body.Children.Add(new TextBlock { Text = displays is null ? "分组外观" : "创建桌面分组", FontSize = 21, FontWeight = FontWeights.SemiBold });
-        body.Children.Add(new TextBlock { Text = "调整名称、玻璃浓度和圆角", FontSize = 12,
+        body.Children.Add(new TextBlock { Text = "调整名称与玻璃浓度", FontSize = 12,
             Foreground = WidgetTheme.SecondaryInk, Margin = new Thickness(0, 7, 0, 23) });
         body.Children.Add(Label("分组名称"));
         var name = new TextBox { Text = group.Name, MaxLength = 40, Padding = new Thickness(11, 9, 11, 9),
@@ -42,7 +42,7 @@ internal sealed class GroupEditor : Window
         previewContent.Children.Add(new TextBlock { Text = "桌面分组", Foreground = WidgetTheme.SecondaryInk, FontSize = 12,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 22, 0, 0) });
         var previewDisplay = (displays ?? Native.Displays()).FirstOrDefault(d => d.Id == group.DisplayId) ?? Native.Displays().First();
-        var previewMaterial = WidgetTheme.CreateMaterial(group, previewDisplay, previewContent);
+        var previewMaterial = WidgetTheme.CreateMaterial(WidgetGeometry.Appearance(group), previewDisplay, previewContent);
         var preview = new Border { Height = 154, Margin = new Thickness(0, 18, 0, 20), Child = previewMaterial.Root };
         body.Children.Add(preview);
         body.Children.Add(new TextBlock { Text = displays is null ? "显示中的桌面分组会同步预览" : "保存后显示到桌面", FontSize = 11, Foreground = WidgetTheme.SecondaryInk, Margin = new Thickness(0, -10, 0, 18) });
@@ -50,21 +50,17 @@ internal sealed class GroupEditor : Window
             Margin = new Thickness(0, 9, 0, 17), IsMoveToPointEnabled = true };
         var tintValue = new TextBlock { Foreground = WidgetTheme.SecondaryInk, FontSize = 12 };
         body.Children.Add(LabeledValue("玻璃浓度", tintValue)); body.Children.Add(tint);
-        var radius = new Slider { Minimum = 0, Maximum = 48, Value = group.Radius, TickFrequency = 1,
-            Margin = new Thickness(0, 9, 0, 22), IsMoveToPointEnabled = true };
-        var radiusValue = new TextBlock { Foreground = WidgetTheme.SecondaryInk, FontSize = 12 };
-        AppTheme.StyleSlider(tint); AppTheme.StyleSlider(radius);
-        body.Children.Add(LabeledValue("圆角", radiusValue)); body.Children.Add(radius);
+        AppTheme.StyleSlider(tint);
         void UpdatePreview()
         {
             previewName.Text = string.IsNullOrWhiteSpace(name.Text) ? "新分组" : name.Text;
-            preview.CornerRadius = new CornerRadius(radius.Value);
-            preview.Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, preview.ActualWidth), preview.Height), radius.Value, radius.Value);
-            previewMaterial.ApplyAppearance(new Group { Tint = tint.Value, Radius = radius.Value });
-            previewAppearance?.Invoke(new Group { Name = previewName.Text, Tint = tint.Value, Radius = radius.Value });
-            tintValue.Text = Math.Round(tint.Value * 100) + "%"; radiusValue.Text = Math.Round(radius.Value) + " DIP";
+            preview.CornerRadius = new CornerRadius(WidgetGeometry.Radius);
+            preview.Clip = new RectangleGeometry(new Rect(0, 0, Math.Max(0, preview.ActualWidth), preview.Height), WidgetGeometry.Radius, WidgetGeometry.Radius);
+            previewMaterial.ApplyAppearance(new Group { Tint = tint.Value, Radius = WidgetGeometry.Radius });
+            previewAppearance?.Invoke(new Group { Name = previewName.Text, Tint = tint.Value, Radius = WidgetGeometry.Radius });
+            tintValue.Text = Math.Round(tint.Value * 100) + "%";
         }
-        name.TextChanged += (_, _) => UpdatePreview(); tint.ValueChanged += (_, _) => UpdatePreview(); radius.ValueChanged += (_, _) => UpdatePreview();
+        name.TextChanged += (_, _) => UpdatePreview(); tint.ValueChanged += (_, _) => UpdatePreview();
         preview.SizeChanged += (_, _) => UpdatePreview();
         UpdatePreview();
         var errorNotice = new TextBlock { Foreground = SystemParameters.HighContrast ? SystemColors.WindowTextBrush : new SolidColorBrush(Color.FromRgb(155, 50, 50)), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12), Visibility = Visibility.Collapsed };
@@ -76,7 +72,7 @@ internal sealed class GroupEditor : Window
         {
             if (string.IsNullOrWhiteSpace(name.Text)) { name.Focus(); return; }
             var previous = (group.Name, group.Tint, group.Radius, group.DisplayId);
-            try { group.Name = name.Text.Trim(); group.Tint = tint.Value; group.Radius = radius.Value; if (screenChoice?.SelectedValue is string selected) group.DisplayId = selected; save(); Close(); }
+            try { group.Name = name.Text.Trim(); group.Tint = tint.Value; if (screenChoice?.SelectedValue is string selected) group.DisplayId = selected; save(); Close(); }
             catch (Exception error)
             {
                 (group.Name, group.Tint, group.Radius, group.DisplayId) = previous;

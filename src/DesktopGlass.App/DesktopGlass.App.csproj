@@ -1,12 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows10.0.22621.0</TargetFramework>
     <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
-    <AssemblyName>DesktopGlass</AssemblyName><Version>0.3.1</Version>
+    <AssemblyName>DesktopGlass</AssemblyName><Version>0.4.0</Version>
     <ApplicationIcon>../../assets/desktop-glass.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest><StartupObject>DesktopGlass.App.Program</StartupObject>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <ImplicitUsings>disable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../DesktopGlass.Core/DesktopGlass.Core.csproj" /></ItemGroup>
+  <!-- 仅固定 .NET 自包含运行库；Windows SDK 投影引用使用自己的版本，避免全局版本污染。 -->
+  <ItemGroup Condition="'$(SelfContained)' == 'true'">
+    <FrameworkReference Update="Microsoft.NETCore.App;Microsoft.WindowsDesktop.App" RuntimeFrameworkVersion="10.0.13" />
+  </ItemGroup>
   <ItemGroup><None Include="../../assets/desktop-glass.ico" Link="assets/desktop-glass.ico" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

@@ -43,7 +43,7 @@ internal static class WidgetDiagnostics
             if (hostMode == args.Contains("--widget-preview")) throw new ArgumentException("必须且只能指定一个组件诊断模式。");
             var holdText = Argument(args, "--hold-seconds");
             var hold = holdText is null ? (hostMode ? 10 : 20) : int.Parse(holdText, CultureInfo.InvariantCulture);
-            hold = Math.Clamp(hold, hostMode ? 1 : 20, 120);
+            hold = Math.Clamp(hold, hostMode ? 1 : 20, 600);
             before = NativeState();
             var display = Native.Displays().FirstOrDefault(d => d.Primary) ?? throw new InvalidOperationException("未找到主显示器。");
             var catalog = new DesktopCatalog(); var entries = empty ? Array.Empty<DesktopEntry>() : catalog.Scan().Take(6).ToArray();

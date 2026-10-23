@@ -1,5 +1,6 @@
-﻿using System.Windows.Controls.Primitives;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Threading;
 using DesktopGlass.App.Windows;
 
 namespace DesktopGlass.App.UI;
@@ -14,6 +15,15 @@ internal sealed class GroupWidget : Window
     private readonly int entryCount;
     private readonly Border dropHighlight;
     private readonly WidgetTheme.Material material;
+    private readonly Grid expandedContent;
+    private readonly Grid compactContent;
+    private readonly TextBlock compactHeading;
+    private readonly DispatcherTimer hoverTimer = new();
+    private bool expanded, closed, dragging, sourceDragging, keyboardNavigation;
+    private int openMenus;
+    internal event Action<bool>? ExpansionRequested;
+    internal DisplayArea Display { get; }
+    internal bool Expanded => expanded;
     private TextBlock heading = null!;
     private Thumb resizeGrip = null!;
 
@@ -28,17 +38,17 @@ internal sealed class GroupWidget : Window
     internal GroupWidget(Group group, DisplayArea display, IReadOnlyList<DesktopEntry> entries,
         DesktopCatalog catalog, bool locked, bool temporary, WidgetCallbacks callbacks)
     {
-        this.callbacks = callbacks; this.temporary = temporary;
+        this.callbacks = callbacks; this.temporary = temporary; Display = display;
         layoutMutable = !locked && !temporary; entryCount = entries.Count;
         Title = group.Name; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
-        AllowsTransparency = false; ShowInTaskbar = false; ShowActivated = false;
+        AllowsTransparency = false; ShowInTaskbar = false; ShowActivated = false; Focusable = true;
         Background = new SolidColorBrush(Color.FromRgb(173, 194, 206));
         FontFamily = new FontFamily("Microsoft YaHei UI"); UseLayoutRounding = true; SnapsToDevicePixels = true;
         Width = Math.Min(group.Width, display.Width / display.Scale);
         Height = Math.Min(group.Height, display.Height / display.Scale);
         Left = display.Left / display.Scale + Math.Clamp(temporary ? 24 : group.X, 0, Math.Max(0, display.Width / display.Scale - Width));
         Top = display.Top / display.Scale + Math.Clamp(temporary ? 24 : group.Y, 0, Math.Max(0, display.Height / display.Scale - Height));
-        var layout = new Grid { Margin = new Thickness(20, 15, 20, 17) };
+        var layout = expandedContent = new Grid { Margin = new Thickness(20, 15, 20, 17) };
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(48) });
         layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         layout.Children.Add(Header(group, locked));
@@ -58,15 +68,46 @@ internal sealed class GroupWidget : Window
         }
         Grid.SetRow(body, 1); layout.Children.Add(body);
         var layers = new Grid(); layers.Children.Add(layout);
-        dropHighlight = new Border { Margin = new Thickness(5), CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 5)),
+        compactContent = new Grid { Margin = new Thickness(14, 12, 14, 12) };
+        compactContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(27) });
+        compactContent.RowDefinitions.Add(new RowDefinition());
+        compactContent.RowDefinitions.Add(new RowDefinition { Height = new GridLength(15) });
+        compactHeading = new TextBlock { Text = group.Name, Foreground = WidgetTheme.Ink, FontSize = 12,
+            FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis };
+        compactContent.Children.Add(compactHeading);
+        var previews = new UniformGrid { Rows = 2, Columns = 2, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        foreach (var entry in entries.Take(4))
+        {
+            var icon = catalog.Icon(entry.Path);
+            FrameworkElement glyph = icon is null ? new TextBlock { Text = "◇", FontSize = 26, Foreground = WidgetTheme.SecondaryInk } :
+                new Image { Source = icon, Width = 27, Height = 27, Stretch = Stretch.Uniform };
+            previews.Children.Add(new Border { Width = 42, Height = 31, Child = glyph, ToolTip = entry.Name });
+        }
+        if (entries.Count == 0) { var mark = AppTheme.GroupMark(42); Grid.SetRow(mark, 1); compactContent.Children.Add(mark); }
+        else { Grid.SetRow(previews, 1); compactContent.Children.Add(previews); }
+        var count = new TextBlock { Text = temporary ? "显示器暂离" : entries.Count + " 个项目", FontSize = 9.5,
+            Foreground = WidgetTheme.SecondaryInk, VerticalAlignment = VerticalAlignment.Bottom };
+        Grid.SetRow(count, 2); compactContent.Children.Add(count); layers.Children.Add(compactContent);
+        dropHighlight = new Border { Margin = new Thickness(5), CornerRadius = new CornerRadius(WidgetGeometry.Radius - 5),
             BorderThickness = new Thickness(1.5), BorderBrush = WidgetTheme.Focus, Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
             IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         layers.Children.Add(dropHighlight); layers.Children.Add(resizeGrip = ResizeGrip());
-        material = WidgetTheme.CreateMaterial(group, display, layers); Content = material.Root; ContextMenu = GroupMenu(locked); AllowDrop = !temporary;
-        DragOver += (_, e) => ShowDrop(e);
-        DragLeave += (_, _) => dropHighlight.Visibility = Visibility.Collapsed;
+        material = WidgetTheme.CreateMaterial(WidgetGeometry.Appearance(group), display, layers); Content = material.Root; ContextMenu = GroupMenu(locked); AllowDrop = !temporary;
+        hoverTimer.Tick += (_, _) => { hoverTimer.Stop(); EvaluateHover(); };
+        MouseEnter += (_, _) => ScheduleHover(); MouseLeave += (_, _) => ScheduleHover();
+        Loaded += (_, _) => ScheduleHover();
+        PreviewKeyDown += (_, e) => { if (e.Key is Key.Enter or Key.Space or Key.Tab or Key.Left or Key.Right or Key.Up or Key.Down or Key.Home or Key.End or Key.PageUp or Key.PageDown)
+            { keyboardNavigation = true; ExpansionRequested?.Invoke(true); ScheduleHover(); } };
+        // 桌面层禁止悬停、恢复时抢焦点；仅用户点击组件后主动激活，才允许后续键盘导航。
+        PreviewMouseDown += (_, _) => { keyboardNavigation = false; Activate(); if (!expanded) Focus(); };
+        IsKeyboardFocusWithinChanged += (_, _) => { if (!IsKeyboardFocusWithin) keyboardNavigation = false; ScheduleHover(); };
+        LostMouseCapture += (_, _) => ScheduleHover(); Deactivated += (_, _) => ScheduleHover();
+        Closed += (_, _) => { closed = true; hoverTimer.Stop(); ExpansionRequested = null; };
+        DragEnter += (_, _) => { dragging = true; ExpansionRequested?.Invoke(true); };
+        DragOver += (_, e) => { dragging = true; ExpansionRequested?.Invoke(true); ShowDrop(e); };
+        DragLeave += (_, _) => { dragging = false; dropHighlight.Visibility = Visibility.Collapsed; ScheduleHover(); };
         Drop += (_, e) => ReceiveDrop(e, entryCount);
-        ApplyAppearance(group);
+        ApplyAppearance(group); SetExpanded(false);
     }
 
     /// <summary>顶层浮动时切换为系统实时材质；系统不可用时使用中性色底，不伪装为壁纸透视。</summary>
@@ -75,11 +116,40 @@ internal sealed class GroupWidget : Window
     /// <summary>只更新外观与裁剪提示，不重建窗口、入口或正在进行的几何手势。</summary>
     internal void ApplyAppearance(Group group)
     {
-        Title = group.Name; heading.Text = group.Name; material.ApplyAppearance(group);
-        dropHighlight.CornerRadius = new CornerRadius(Math.Max(0, group.Radius - 5));
+        Title = group.Name; heading.Text = group.Name; compactHeading.Text = group.Name; material.ApplyAppearance(WidgetGeometry.Appearance(group));
+        dropHighlight.CornerRadius = new CornerRadius(WidgetGeometry.Radius - 5);
         // 标记整体内移到圆弧内部，避免线段跨过右下圆弧造成不对称错觉。
-        var inset = Math.Max(10, group.Radius * (1 - 1 / Math.Sqrt(2)) + 5);
+        var inset = Math.Max(10, WidgetGeometry.Radius * (1 - 1 / Math.Sqrt(2)) + 5);
         resizeGrip.Margin = new Thickness(0, 0, inset, inset);
+    }
+
+    /// <summary>原位切换紧凑预览和完整网格，保留入口控件及命令回调。</summary>
+    internal void SetExpanded(bool value)
+    {
+        expanded = value;
+        expandedContent.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+        compactContent.Visibility = value ? Visibility.Collapsed : Visibility.Visible;
+        resizeGrip.Visibility = value && layoutMutable ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private bool PointerInside => WidgetHost.PointerInside(new System.Windows.Interop.WindowInteropHelper(this).Handle);
+    private bool KeepExpanded => openMenus > 0 || dragging || sourceDragging || IsMouseCaptureWithin || (keyboardNavigation && IsKeyboardFocusWithin);
+    private void ScheduleHover()
+    {
+        if (closed) return;
+        hoverTimer.Stop();
+        hoverTimer.Interval = TimeSpan.FromMilliseconds(PointerInside ? 120 : 450); hoverTimer.Start();
+    }
+    private void EvaluateHover()
+    {
+        if (closed) return;
+        if (PointerInside || KeepExpanded) ExpansionRequested?.Invoke(true);
+        else ExpansionRequested?.Invoke(false);
+    }
+    private void TrackMenu(ContextMenu menu)
+    {
+        menu.Opened += (_, _) => { openMenus++; hoverTimer.Stop(); ExpansionRequested?.Invoke(true); };
+        menu.Closed += (_, _) => { openMenus = Math.Max(0, openMenus - 1); ScheduleHover(); };
     }
 
     private Grid Header(Group group, bool locked)
@@ -94,8 +164,9 @@ internal sealed class GroupWidget : Window
         header.Children.Add(labels);
         var move = TransparentThumb(layoutMutable ? Cursors.SizeAll : Cursors.Arrow); move.IsEnabled = layoutMutable;
         move.ToolTip = temporary ? "接回显示器后可调整布局" : locked ? "布局已锁定" : "拖动分组";
+        move.DragStarted += (_, _) => { dragging = true; ExpansionRequested?.Invoke(true); };
         move.DragDelta += (_, e) => { if (layoutMutable) callbacks.MoveBy(e.HorizontalChange, e.VerticalChange); };
-        move.DragCompleted += (_, e) => { if (layoutMutable) callbacks.CommitBounds(e.Canceled); };
+        move.DragCompleted += (_, e) => { if (layoutMutable) callbacks.CommitBounds(e.Canceled); dragging = false; ScheduleHover(); };
         header.Children.Add(move);
         var more = WidgetTheme.MoreButton(); more.HorizontalAlignment = HorizontalAlignment.Right; more.VerticalAlignment = VerticalAlignment.Top;
         more.Click += (_, _) =>
@@ -136,7 +207,10 @@ internal sealed class GroupWidget : Window
                 Math.Abs(distance.Y) < SystemParameters.MinimumVerticalDragDistance) return;
             dragArmed = false;
             // 内部拖拽只传引用；成功或取消均不在源组件中移除真实文件或列表项。
-            DragDrop.DoDragDrop(tile, new DataObject(EntryFormat, entry.Path), DragDropEffects.Link); e.Handled = true;
+            sourceDragging = true;
+            try { DragDrop.DoDragDrop(tile, new DataObject(EntryFormat, entry.Path), DragDropEffects.Link); }
+            finally { sourceDragging = false; ScheduleHover(); }
+            e.Handled = true;
         };
         tile.KeyDown += (_, e) =>
         {
@@ -146,7 +220,7 @@ internal sealed class GroupWidget : Window
         tile.Drop += (_, e) => ReceiveDrop(e, index);
         var menu = AppTheme.CreateContextMenu(); menu.Items.Add(Menu("打开", () => callbacks.Open(entry.Path)));
         menu.Items.Add(Menu("移出分组", () => callbacks.Release(entry.Path), !temporary));
-        tile.ContextMenu = menu; return tile;
+        TrackMenu(menu); tile.ContextMenu = menu; return tile;
     }
 
     private Thumb ResizeGrip()
@@ -157,8 +231,9 @@ internal sealed class GroupWidget : Window
         thumb.Margin = new Thickness(0, 0, 10, 10); thumb.ToolTip = "调整分组大小";
         var drawing = new GeometryDrawing(null, new Pen(WidgetTheme.SecondaryInk, 1.4), Geometry.Parse("M 10,19 L 19,10 M 15,19 L 19,15"));
         thumb.Background = new DrawingBrush(drawing) { Stretch = Stretch.None, AlignmentX = AlignmentX.Right, AlignmentY = AlignmentY.Bottom, Opacity = .60 };
+        thumb.DragStarted += (_, _) => { dragging = true; ExpansionRequested?.Invoke(true); };
         thumb.DragDelta += (_, e) => { if (layoutMutable) callbacks.ResizeBy(e.HorizontalChange, e.VerticalChange); };
-        thumb.DragCompleted += (_, e) => { if (layoutMutable) callbacks.CommitBounds(e.Canceled); }; return thumb;
+        thumb.DragCompleted += (_, e) => { if (layoutMutable) callbacks.CommitBounds(e.Canceled); dragging = false; ScheduleHover(); }; return thumb;
     }
 
     private ContextMenu GroupMenu(bool locked)
@@ -166,7 +241,7 @@ internal sealed class GroupWidget : Window
         var menu = AppTheme.CreateContextMenu(); menu.Items.Add(Menu("名称与玻璃外观…", callbacks.Edit, !temporary));
         menu.Items.Add(Menu("新建分组", callbacks.Create)); menu.Items.Add(Menu(locked ? "解锁布局" : "锁定布局", callbacks.ToggleLock));
         menu.Items.Add(new Separator()); menu.Items.Add(Menu("移除分组（保留文件）", callbacks.Remove, !temporary));
-        menu.Items.Add(new Separator()); menu.Items.Add(Menu("退出桌面分组", callbacks.Exit)); return menu;
+        menu.Items.Add(new Separator()); menu.Items.Add(Menu("退出桌面分组", callbacks.Exit)); TrackMenu(menu); return menu;
     }
 
     private void ShowDrop(DragEventArgs e)
@@ -179,6 +254,7 @@ internal sealed class GroupWidget : Window
     private void ReceiveDrop(DragEventArgs e, int index)
     {
         if (e.Handled) return;
+        dragging = false; ScheduleHover();
         dropHighlight.Visibility = Visibility.Collapsed; var paths = ReadPaths(e.Data); var effect = AllowedEffect(e.AllowedEffects);
         e.Handled = true; e.Effects = DragDropEffects.None;
         if (temporary || paths.Count == 0 || effect == DragDropEffects.None) return;

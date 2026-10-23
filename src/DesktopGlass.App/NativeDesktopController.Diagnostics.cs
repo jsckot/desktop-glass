@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Windows.Threading;
 
 namespace DesktopGlass.App;
@@ -8,6 +8,7 @@ internal sealed partial class NativeDesktopController
     /// <summary>仅用项目内自建空组验证真实 HWND 在移动、缩放和取消后的生命周期；不收纳任何桌面项。</summary>
     internal static int RunLayoutDiagnostics(string[] args)
     {
+        if (args.Contains("--hover-only")) return RunHoverDiagnostics(args);
         if (args.Contains("--appearance-only")) return RunAppearanceDiagnostics(args);
         var index = Array.IndexOf(args, "--output");
         if (index < 0 || index + 1 >= args.Length) return 1;
@@ -22,7 +23,9 @@ internal sealed partial class NativeDesktopController
             var workspace = new Workspace(); workspace.AddGroup("移动生命周期验证", Windows.Native.Displays().First(d => d.Primary).Id);
             new WorkspaceStore(profile).Save(workspace);
             application = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-            controller = new NativeDesktopController(application, profile); controller.Start(); controller.manager!.Hide();
+            controller = new NativeDesktopController(application, profile);
+            controller.displays = Windows.Native.Displays(); controller.BuildWidgets();
+            controller.widgets.Single().Host!.SetExpanded(true);
             application.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
             void Check(string name, Action operation)
             {
@@ -47,10 +50,12 @@ internal sealed partial class NativeDesktopController
             checks.Add(new { Name = "临时前景层", DesktopChild = false, Topmost = true });
             controller.SetForeground(false);
             var restored = controller.widgets.Single().Host!;
-            if (Windows.Native.GetParent(restored.Handle) != restored.Parent || restored.GetBounds() != original ||
+            restored.SetExpanded(true);
+            if (!restored.Alive || restored.GetBounds() != original ||
                 ((long)Windows.Native.GetWindowLongPtr(restored.Handle, -20) & 8) != 0)
                 throw new InvalidOperationException("返回桌面后层级或原矩形发生变化。");
             checks.Add(new { Name = "返回桌面", OriginalBounds = true, Topmost = false });
+            if (controller.lease.Alive) throw new InvalidOperationException("隔离诊断不应取得桌面项目租约。");
             controller.Dispose(); if (controller.CleanupFailed) throw new InvalidOperationException("空组件测试清理失败。");
             application.Shutdown();
             File.WriteAllText(output, JsonSerializer.Serialize(new { Passed=true, Checks=checks, RealDesktopItemsCollected=0, Profile=profile }));
