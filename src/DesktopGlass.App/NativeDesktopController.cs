@@ -6,7 +6,7 @@ using DesktopGlass.App.Windows;
 namespace DesktopGlass.App;
 
 /// <summary>协调独立分组、逐项恢复租约及工作区事务；组件之外始终由 Windows 处理原生桌面输入。</summary>
-internal sealed class NativeDesktopController : IDisposable
+internal sealed partial class NativeDesktopController : IDisposable
 {
     private readonly Application app;
     private readonly string profile;
@@ -22,7 +22,9 @@ internal sealed class NativeDesktopController : IDisposable
     private Workspace workspace;
     private List<DisplayArea> displays = [];
     private System.Windows.Forms.NotifyIcon? tray;
+    private ManagementWindow? manager;
     private bool stopped, rebuilding, topologyDirty, renderQueued;
+    private bool foreground;
     /// <summary>清理或恢复未全部成功时为 true，供启动入口返回非零退出码。</summary>
     internal bool CleanupFailed { get; private set; }
 
@@ -62,13 +64,10 @@ internal sealed class NativeDesktopController : IDisposable
         displays = Native.Displays();
         if (displays.Count == 0) throw new InvalidOperationException("未找到可用显示器，保持原生桌面。");
         RefreshEntries();
-        if (workspace.Groups.Count == 0)
-        {
-            var initial = Copy(workspace); initial.AddGroup("常用工具", Primary.Id); Save(initial);
-        }
+        Save(workspace); // 迁移先保存备份；空配置不创建默认分组。
         lease.Acquire(); BuildWidgets();
         var warnings = new List<string>();
-        foreach (var path in workspace.Groups.SelectMany(g => g.Entries))
+        foreach (var path in WorkspaceVisibility.VisibleEntries(workspace, displays))
         {
             if (path.StartsWith("::", StringComparison.Ordinal) || (!File.Exists(path) && !Directory.Exists(path)))
             { warnings.Add(DisplayName(path) + "：入口不存在或是虚拟桌面项目，保留引用但未隐藏原图标。"); continue; }
@@ -90,7 +89,7 @@ internal sealed class NativeDesktopController : IDisposable
             watcher.Created += FilesChanged; watcher.Deleted += FilesChanged; watcher.Renamed += FilesChanged;
             watcher.Error += (_, _) => Dispatch(QueueRefresh); watcher.EnableRaisingEvents = true; watchers.Add(watcher);
         }
-        guardTimer.Start();
+        guardTimer.Start(); ShowPanel();
         if (warnings.Count > 0) Report(new InvalidOperationException("以下入口未自动收纳：\n" + string.Join("\n", warnings.Take(12)) +
             (warnings.Count > 12 ? "\n另有 " + (warnings.Count - 12) + " 项；原引用均保留。" : "")));
     }
@@ -100,22 +99,24 @@ internal sealed class NativeDesktopController : IDisposable
     private void InstallTray()
     {
         var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("打开管理面板", null, (_, _) => Dispatch(ShowPanel));
         menu.Items.Add("新建分组", null, (_, _) => Dispatch(() => Execute(CreateGroup)));
+        menu.Items.Add(foreground ? "将分组放回桌面" : "临时浮到应用前面", null, (_, _) => Dispatch(() => Execute(() => SetForeground(!foreground))));
         menu.Items.Add(workspace.Locked ? "解锁布局" : "锁定布局", null, (_, _) => Dispatch(() => Execute(ToggleLock)));
         menu.Items.Add("刷新分组", null, (_, _) => Dispatch(() => Execute(Refresh)));
         menu.Items.Add("打开桌面文件夹", null, (_, _) => Dispatch(() => Open(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory))));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("恢复项目并退出", null, (_, _) => Dispatch(Exit));
         if (tray is not null) { var previous = tray.ContextMenuStrip; tray.ContextMenuStrip = menu; previous?.Dispose(); return; }
-        tray = new System.Windows.Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Application,
+        tray = new System.Windows.Forms.NotifyIcon { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Environment.ProcessPath!)!,
             Text = "Desktop Glass · 桌面分组", ContextMenuStrip = menu, Visible = true };
-        tray.DoubleClick += (_, _) => Dispatch(() => Execute(CreateGroup));
+        tray.DoubleClick += (_, _) => Dispatch(ShowPanel);
     }
 
     private void RefreshEntries()
     {
         foreach (var entry in catalog.Scan()) entries[entry.Path] = entry;
-        foreach (var path in workspace.Groups.SelectMany(g => g.Entries))
+        foreach (var path in WorkspaceVisibility.VisibleEntries(workspace, displays))
             entries.TryAdd(path, new DesktopEntry(path, DisplayName(path)));
     }
 
@@ -128,7 +129,9 @@ internal sealed class NativeDesktopController : IDisposable
         {
             // 重建会取消在途几何手势；临时缺屏矩形绝不回写配置。
             var next = Native.Displays(); if (next.Count == 0) throw new InvalidOperationException("未找到可用显示器。");
-            displays = next; topologyDirty = false;
+            var previousDisplays = displays; displays = next; topologyDirty = false;
+            try { workspace = VisibilityTransaction(workspace, displays, _ => { }, lease.Contains, lease.Collect, lease.Release, _ => { }, () => lease.Alive, previousDisplays); }
+            catch (Exception error) { StopAfterFailure(error); return; }
         }
         RefreshEntries(); RebuildOrStop();
     }
@@ -141,7 +144,7 @@ internal sealed class NativeDesktopController : IDisposable
             foreach (var item in widgets) item.Host?.Dispose(); widgets.Clear();
             double temporaryX = 20, temporaryY = 20, rowHeight = 0;
             var temporaryIndex = 0;
-            foreach (var group in workspace.Groups)
+            foreach (var group in WorkspaceVisibility.VisibleGroups(workspace, displays))
             {
                 var placement = LayoutResolver.Resolve(group, displays);
                 var bounds = new Rect(placement.Left, placement.Top, placement.Width, placement.Height);
@@ -171,7 +174,7 @@ internal sealed class NativeDesktopController : IDisposable
                 var ordered = group.Entries.Select(path => entries.GetValueOrDefault(path) ?? new DesktopEntry(path, DisplayName(path))).ToArray();
                 var window = new GroupWidget(group, placement.Display, ordered, catalog, workspace.Locked, placement.Temporary, callbacks);
                 window.Closed += (_, _) => { if (!rebuilding && !stopped) Dispatch(Exit); };
-                item.Host = new WidgetHost(window, bounds, group.Radius, placement.Display.Scale); widgets.Add(item);
+                item.Host = new WidgetHost(window, bounds, group.Radius, placement.Display.Scale, foreground); widgets.Add(item);
             }
         }
         finally { rebuilding = false; }
@@ -212,7 +215,13 @@ internal sealed class NativeDesktopController : IDisposable
 
     private void CreateGroup()
     {
-        var candidate = Copy(workspace); var group = candidate.AddGroup("新分组", Primary.Id); Save(candidate); QueueRender(); EditGroup(group.Id);
+        var draft = new Group { Name = "新分组", DisplayId = Primary.Id, DesktopVisible = true };
+        var editor = new GroupEditor(draft, () => {
+            var candidate = Copy(workspace);
+            if (candidate.Groups.Count >= 200) throw new InvalidOperationException("最多支持 200 个分组。");
+            candidate.Groups.Add(CopyGroup(draft)); Save(candidate); QueueRender();
+        }, displays);
+        editor.Owner = manager; editor.Topmost = foreground; editor.Show();
     }
 
     private void EditGroup(string id)
@@ -228,7 +237,7 @@ internal sealed class NativeDesktopController : IDisposable
             candidate.Groups[index].Name = draft.Name; candidate.Groups[index].Tint = draft.Tint; candidate.Groups[index].Radius = draft.Radius;
             Save(candidate); QueueRender();
         });
-        editors.Add(id, editor); editor.Closed += (_, _) => editors.Remove(id); editor.Show();
+        editors.Add(id, editor); editor.Topmost = foreground; editor.Closed += (_, _) => editors.Remove(id); editor.Show();
     }
 
     private void ToggleLock()
@@ -264,19 +273,26 @@ internal sealed class NativeDesktopController : IDisposable
             group.Height = resized ? Math.Clamp(bounds.Height / item.Display.Scale, 160, 1600) : source.Height;
             group.X = Math.Clamp((bounds.Left - target.Left) / target.Scale, 0, Math.Max(0, target.Width / target.Scale - group.Width));
             group.Y = Math.Clamp((bounds.Top - target.Top) / target.Scale, 0, Math.Max(0, target.Height / target.Scale - group.Height));
-            Save(candidate); QueueRender();
+            Save(candidate);
+            if (target.Id == item.Display.Id && target.Scale == item.Display.Scale)
+            {
+                // 同屏只提交几何并复用原 HWND；销毁重建会在松手时露出一帧桌面。
+                item.Host.SetBounds(new Rect(target.Left + group.X * target.Scale, target.Top + group.Y * target.Scale,
+                    group.Width * target.Scale, group.Height * target.Scale), group.Radius, target.Scale);
+            }
+            else QueueRender();
         }
         catch
         { item.Host.SetBounds(original, source.Radius, item.Display.Scale); throw; }
     }
 
-    private void Save(Workspace candidate) { store.Save(candidate); workspace = candidate; }
+    private void Save(Workspace candidate) { store.Save(candidate); workspace = candidate; manager?.Refresh(); }
     private void QueueRender()
     {
         if (renderQueued || stopped) return; renderQueued = true;
         Dispatch(() => { renderQueued = false; RebuildOrStop(); });
     }
-    private void RebuildOrStop() { try { BuildWidgets(); } catch (Exception error) { StopAfterFailure(error); } }
+    private void RebuildOrStop() { try { BuildWidgets(); manager?.Refresh(); } catch (Exception error) { StopAfterFailure(error); } }
     private void Execute(Action action)
     {
         if (stopped) return;
@@ -316,6 +332,7 @@ internal sealed class NativeDesktopController : IDisposable
         SystemEvents.DisplaySettingsChanged -= DisplayChanged; SystemEvents.PowerModeChanged -= PowerChanged;
         var errors = new List<Exception>();
         foreach (var watcher in watchers) { try { watcher.Dispose(); } catch (Exception error) { errors.Add(error); } } watchers.Clear();
+        manager?.Finish(); manager = null;
         foreach (var editor in editors.Values.ToArray()) { try { editor.Close(); } catch (Exception error) { errors.Add(error); } } editors.Clear();
         foreach (var item in widgets) { try { item.Host?.Dispose(); } catch (Exception error) { errors.Add(error); } } widgets.Clear();
         try { lease.Dispose(); } catch (Exception error) { errors.Add(error); }
@@ -396,8 +413,91 @@ internal sealed class NativeDesktopController : IDisposable
     }
 
     private static Workspace Copy(Workspace source) => new() { Version = source.Version, Locked = source.Locked, Groups = source.Groups.Select(CopyGroup).ToList() };
-    private static Group CopyGroup(Group source) => new() { Id = source.Id, Name = source.Name, DisplayId = source.DisplayId,
+    private static Group CopyGroup(Group source) => new() { Id = source.Id, Name = source.Name, DisplayId = source.DisplayId, DesktopVisible = source.DesktopVisible,
         X = source.X, Y = source.Y, Width = source.Width, Height = source.Height, Tint = source.Tint, Radius = source.Radius, Entries = [.. source.Entries] };
+
+    /// <summary>显示并聚焦现有管理面板，重复启动及托盘使用同一入口。</summary>
+    internal void ShowPanel()
+    {
+        if (stopped) return;
+        if (manager is null)
+            manager = new ManagementWindow(() => Copy(workspace), () => displays, () => Execute(CreateGroup),
+                id => Execute(() => EditGroup(id)), id => Execute(() => RemoveManagedGroup(id)),
+                id => Execute(() => MoveToCurrentScreen(id)), (id, value) => Execute(() => SetVisible(id, value)),
+                () => Execute(ToggleLock), Exit, () => Execute(() => SetForeground(!foreground)), () => foreground);
+        manager.Refresh(); manager.Show();
+        if (manager.WindowState == WindowState.Minimized) manager.WindowState = WindowState.Normal;
+        manager.Activate();
+    }
+    private void SetVisible(string id, bool value)
+    {
+        var group = workspace.Groups.Single(g => g.Id == id);
+        if (value && displays.Count(d => d.Id == group.DisplayId) != 1)
+            throw new InvalidOperationException("原显示器未连接，请先选择“移到当前屏幕”。");
+        workspace = VisibilityTransaction(workspace, displays, candidate => candidate.Groups.Single(g => g.Id == id).DesktopVisible = value,
+            lease.Contains, lease.Collect, lease.Release, store.Save, () => lease.Alive);
+        QueueRender();
+    }
+    private void RemoveManagedGroup(string id)
+    {
+        var group = workspace.Groups.Single(g => g.Id == id);
+        if (MessageBox.Show(manager, "移除“" + group.Name + "”？文件会保留在原位置。", "移除分组",
+            MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        workspace = ReleaseTransaction(workspace, group.Entries.ToArray(), candidate => candidate.RemoveGroup(id),
+            lease.Contains, lease.Collect, lease.Release, store.Save);
+        if (editors.Remove(id, out var editor)) editor.Close();
+        QueueRender();
+    }
+    private void MoveToCurrentScreen(string id)
+    {
+        var target = Primary;
+        if (manager is not null)
+        {
+            var screen = System.Windows.Forms.Screen.FromHandle(new System.Windows.Interop.WindowInteropHelper(manager).Handle);
+            target = displays.FirstOrDefault(d => d.Left == screen.WorkingArea.Left && d.Top == screen.WorkingArea.Top) ?? Primary;
+        }
+        workspace = VisibilityTransaction(workspace, displays, candidate => {
+            var group = candidate.Groups.Single(g => g.Id == id);
+            group.DisplayId = target.Id; group.X = 36; group.Y = 64; group.DesktopVisible = true;
+        }, lease.Contains, lease.Collect, lease.Release, store.Save, () => lease.Alive);
+        QueueRender();
+    }
+
+    /// <summary>以可呈现分组为目标协调租约及显示状态；持久化失败恢复原租约，回滚失败保留责任。</summary>
+    internal static Workspace VisibilityTransaction(Workspace source, IReadOnlyList<DisplayArea> displays, Action<Workspace> mutate,
+        Func<string, bool> contains, Action<string> collect, Action<string> release, Action<Workspace> save, Func<bool> alive, IReadOnlyList<DisplayArea>? previousDisplays = null)
+    {
+        var candidate = Copy(source); mutate(candidate); candidate.Validate();
+        var before = WorkspaceVisibility.VisibleEntries(source, previousDisplays ?? displays).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var desired = WorkspaceVisibility.VisibleEntries(candidate, displays).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var released = new List<string>(); var collected = new List<string>(); bool releaseFailed = false;
+        try
+        {
+            foreach (var path in source.Groups.SelectMany(g => g.Entries).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (desired.Contains(path) || !contains(path)) continue;
+                try { release(path); released.Add(path); } catch { releaseFailed = true; throw; }
+            }
+            foreach (var path in desired.Where(p => !before.Contains(p)))
+            {
+                if (!alive()) throw new InvalidOperationException("恢复保护未就绪，无法显示分组。");
+                if (contains(path)) continue;
+                collected.Add(path); collect(path);
+            }
+            save(candidate); return candidate;
+        }
+        catch (Exception error)
+        {
+            var failures = new List<Exception>();
+            foreach (var path in collected.AsEnumerable().Reverse())
+                try { if (contains(path)) release(path); } catch (Exception recovery) { failures.Add(recovery); }
+            foreach (var path in released)
+                try { collect(path); } catch (Exception recovery) { failures.Add(recovery); }
+            if (releaseFailed || failures.Count > 0)
+                throw new MutationRecoveryException("分组显示切换失败，部分项目仍需恢复。", failures.Prepend(error));
+            throw;
+        }
+    }
     private sealed class Presentation(string groupId, DisplayArea display, bool temporary)
     {
         internal string GroupId { get; } = groupId;

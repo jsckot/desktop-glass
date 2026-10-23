@@ -23,6 +23,9 @@ internal static class Program
             if(args.Length>0 && args[0].StartsWith("--setup-",StringComparison.Ordinal))return InstallerBridge.Run(args);
             if(args.Length==3 && args[0]=="--hold-directory"){Environment.CurrentDirectory=args[1];File.WriteAllText(args[2],"ready");Thread.Sleep(30000);return 0;}
             if(args.Contains("--native-item-test") || args.Contains("--native-item-crash-child"))return NativeItemDiagnostics.Run(args);
+            if(args.Contains("--backdrop-probe"))return BackdropDiagnostics.Run(args);
+            if(args.Contains("--layout-lifecycle-tests"))return NativeDesktopController.RunLayoutDiagnostics(args);
+            if(args.Contains("--render-management"))return ManagementDiagnostics.Run(args);
             if(args.Contains("--cleanup-state-tests"))return UninstallStateDiagnostics.Run(args);
             if(args.Contains("--controller-tests"))return NativeControllerDiagnostics.Run(args);
             if(args.Contains("--item-lease-tests") || args.Contains("--item-lease-crash-child"))return ItemLeaseDiagnostics.Run(args);
@@ -37,21 +40,24 @@ internal static class Program
             if(args.Contains("--widget-preview") || args.Contains("--widget-host-test")) return WidgetDiagnostics.Run(args);
             if(args.Contains("--ui-test")) return UiDiagnostics.Run(args);
             if(args.Contains("--diagnose") || args.Contains("--smoke") || args.Contains("--crash-test") || args.Contains("--crash-child")) return Diagnostics.Run(args);
-            Mutex instance;EventWaitHandle stop;
+            Mutex instance;EventWaitHandle stop;EventWaitHandle showPanel;
             using(Installation.EnterMaintenance())
             {
                 Installation.CheckStartupAllowed();
+                showPanel=new EventWaitHandle(false,EventResetMode.AutoReset,"Local\\DesktopGlass-show");
                 instance=new Mutex(true,"Local\\DesktopGlass-main",out var first);
-                if(!first){instance.Dispose();MessageBox.Show("Desktop Glass 已在运行，请使用任务栏托盘菜单。","Desktop Glass");return 0;}
+                if(!first){instance.Dispose();showPanel.Set();showPanel.Dispose();return 0;}
                 stop=new EventWaitHandle(false,EventResetMode.ManualReset,Installation.StopEvent);
             }
-            using var instanceLifetime=instance;using var stopLifetime=stop;
+            using var instanceLifetime=instance;using var stopLifetime=stop;using var showLifetime=showPanel;
             var app=new Application{ShutdownMode=ShutdownMode.OnExplicitShutdown};
             var registered=ThreadPool.RegisterWaitForSingleObject(stop,(_,_)=>app.Dispatcher.BeginInvoke(()=>app.Shutdown()),null,Timeout.Infinite,true);
             app.DispatcherUnhandledException+=(_,e)=>{MessageBox.Show("整理遇到异常，即将恢复桌面并退出。\n"+e.Exception.Message,"Desktop Glass");e.Handled=true;app.Shutdown(1);};
             var profileIndex=Array.IndexOf(args,"--profile");
             var profile=profileIndex>=0?Path.GetFullPath(args[profileIndex+1]):Installation.Data;
             using var controller=new NativeDesktopController(app,profile);
+
+            var showRegistration=ThreadPool.RegisterWaitForSingleObject(showPanel,(_,_)=>app.Dispatcher.BeginInvoke(controller.ShowPanel),null,Timeout.Infinite,false);
             app.Exit+=(_,_)=>controller.Dispose();controller.Start();
             var durationIndex=Array.IndexOf(args,"--run-seconds");
             if(durationIndex>=0)
@@ -59,7 +65,7 @@ internal static class Program
                 var finish=new System.Windows.Threading.DispatcherTimer{Interval=TimeSpan.FromSeconds(Math.Clamp(int.Parse(args[durationIndex+1]),1,600))};
                 finish.Tick+=(_,_)=>{finish.Stop();controller.Exit();};finish.Start();
             }
-            var exitCode=app.Run();registered.Unregister(null);return controller.CleanupFailed?1:exitCode;
+            var exitCode=app.Run();registered.Unregister(null);showRegistration.Unregister(null);return controller.CleanupFailed?1:exitCode;
         }
         catch(Exception e) {System.Windows.MessageBox.Show(e.Message,"Desktop Glass",MessageBoxButton.OK,MessageBoxImage.Error);return 1;}
     }

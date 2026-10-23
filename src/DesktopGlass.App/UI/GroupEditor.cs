@@ -8,14 +8,14 @@ internal sealed class GroupEditor : Window
     /// <summary>创建外观编辑器；调用方可传入独立草稿，以事务方式持久化。</summary>
     /// <param name="group">待编辑分组或草稿。</param>
     /// <param name="save">保存回调；失败应抛异常，窗口会保留输入并显示原因。</param>
-    internal GroupEditor(Group group, Action save)
+    internal GroupEditor(Group group, Action save, IReadOnlyList<DisplayArea>? displays = null)
     {
-        Title = "分组外观"; Width = 420; SizeToContent = SizeToContent.Height;
+        AppTheme.Apply(this); Title = displays is null ? "分组外观" : "新建分组"; Width = 440; SizeToContent = SizeToContent.Height;
         ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.CenterScreen;
         Background = new SolidColorBrush(Color.FromRgb(239, 246, 250)); Foreground = WidgetTheme.Ink;
         FontFamily = new FontFamily("Microsoft YaHei UI"); ShowInTaskbar = false;
         var body = new StackPanel { Margin = new Thickness(26, 24, 26, 23) };
-        body.Children.Add(new TextBlock { Text = "分组外观", FontSize = 21, FontWeight = FontWeights.SemiBold });
+        body.Children.Add(new TextBlock { Text = displays is null ? "分组外观" : "创建桌面分组", FontSize = 21, FontWeight = FontWeights.SemiBold });
         body.Children.Add(new TextBlock { Text = "调整名称、玻璃浓度和圆角", FontSize = 12,
             Foreground = WidgetTheme.SecondaryInk, Margin = new Thickness(0, 7, 0, 23) });
         body.Children.Add(Label("分组名称"));
@@ -24,6 +24,14 @@ internal sealed class GroupEditor : Window
             VerticalContentAlignment = VerticalAlignment.Center };
         body.Children.Add(new Border { Child = name, CornerRadius = new CornerRadius(9), Background = Brushes.White,
             BorderBrush = new SolidColorBrush(Color.FromRgb(196, 214, 225)), BorderThickness = new Thickness(1) });
+        ComboBox? screenChoice = null;
+        if (displays is not null)
+        {
+            body.Children.Add(Label("显示到"));
+            screenChoice = new ComboBox { ItemsSource = displays, DisplayMemberPath = "Name", SelectedValuePath = "Id",
+                SelectedValue = group.DisplayId, Padding = new Thickness(10), Margin = new Thickness(0, 4, 0, 0) };
+            body.Children.Add(screenChoice);
+        }
         var previewName = new TextBlock { Text = group.Name, FontSize = 15, FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(17, 0, 17, 0), TextTrimming = TextTrimming.CharacterEllipsis };
         var preview = new Border { Height = 62, Margin = new Thickness(0, 18, 0, 20), BorderThickness = new Thickness(1),
@@ -36,6 +44,7 @@ internal sealed class GroupEditor : Window
         var radius = new Slider { Minimum = 0, Maximum = 48, Value = group.Radius, TickFrequency = 1,
             Margin = new Thickness(0, 9, 0, 22), IsMoveToPointEnabled = true };
         var radiusValue = new TextBlock { Foreground = WidgetTheme.SecondaryInk, FontSize = 12 };
+        AppTheme.StyleSlider(tint); AppTheme.StyleSlider(radius);
         body.Children.Add(LabeledValue("圆角", radiusValue)); body.Children.Add(radius);
         void UpdatePreview()
         {
@@ -54,7 +63,7 @@ internal sealed class GroupEditor : Window
         {
             if (string.IsNullOrWhiteSpace(name.Text)) { name.Focus(); return; }
             var previous = (group.Name, group.Tint, group.Radius);
-            try { group.Name = name.Text.Trim(); group.Tint = tint.Value; group.Radius = radius.Value; save(); Close(); }
+            try { group.Name = name.Text.Trim(); group.Tint = tint.Value; group.Radius = radius.Value; if (screenChoice?.SelectedValue is string selected) group.DisplayId = selected; save(); Close(); }
             catch (Exception error)
             {
                 (group.Name, group.Tint, group.Radius) = previous;
@@ -73,17 +82,6 @@ internal sealed class GroupEditor : Window
     }
     private static Button Button(string text, bool primary)
     {
-        var button = new Button { Content = text, Padding = new Thickness(17, 9, 17, 9), Margin = new Thickness(8, 0, 0, 0),
-            FontSize = 12, Foreground = primary ? Brushes.White : WidgetTheme.Ink,
-            Background = primary ? WidgetTheme.Focus : Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(196, 214, 225)),
-            BorderThickness = new Thickness(primary ? 0 : 1), Cursor = System.Windows.Input.Cursors.Hand };
-        var frame = new FrameworkElementFactory(typeof(Border)); frame.Name = "Frame";
-        frame.SetValue(Border.CornerRadiusProperty, new CornerRadius(9));
-        foreach (var property in new[] { Border.BackgroundProperty, Border.BorderBrushProperty, Border.BorderThicknessProperty, Border.PaddingProperty })
-            frame.SetBinding(property, new Binding(property.Name) { RelativeSource = RelativeSource.TemplatedParent });
-        var content = new FrameworkElementFactory(typeof(ContentPresenter)); content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        frame.AppendChild(content); var template = new ControlTemplate(typeof(Button)) { VisualTree = frame };
-        var focus = new Trigger { Property = IsKeyboardFocusedProperty, Value = true };
-        focus.Setters.Add(new Setter(OpacityProperty, .80, "Frame")); template.Triggers.Add(focus); button.Template = template; return button;
+        var button = AppTheme.Button(text, primary); button.Margin = new Thickness(8,0,0,0); return button;
     }
 }

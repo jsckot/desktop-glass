@@ -92,6 +92,39 @@ internal static class NativeControllerDiagnostics
                 Throws(() => Collect(Source(), [], hidden, _ => throw new Exception("unexpected collect"), _ => throw new Exception("unexpected release"), _ => throw new Exception("unexpected save")), "ArgumentException");
             });
 
+
+            Test("显示状态复制保持启用意愿", () => {
+                var source=Source(); source.Groups[0].DesktopVisible=true;
+                var hidden=new HashSet<string>();
+                var value=Collect(source,["x"],hidden,p=>hidden.Add(p),p=>hidden.Remove(p),_=>{});
+                Equal(value.Groups[0].DesktopVisible,true); Equal(source.Groups[0].DesktopVisible,true);
+            });
+            Test("隐藏组保存失败恢复租约与显示意愿", () => {
+                var source=Source(); source.Groups[0].DesktopVisible=true; var hidden=new HashSet<string>{"a"};
+                Throws(()=>NativeDesktopController.VisibilityTransaction(source, [new DisplayArea("test","test",0,0,1200,800,1,true)],
+                    c=>c.Groups[0].DesktopVisible=false, hidden.Contains,p=>hidden.Add(p),p=>hidden.Remove(p),
+                    _=>throw new IOException("save failed"),()=>true),"IOException");
+                Equal(hidden.SetEquals(["a"]),true); Equal(source.Groups[0].DesktopVisible,true);
+            });
+            Test("显示组收纳失败释放本次项目且不保存", () => {
+                var source=Source(); var hidden=new HashSet<string>(); var saves=0;
+                Throws(()=>NativeDesktopController.VisibilityTransaction(source,[new DisplayArea("test","test",0,0,1200,800,1,true)],
+                    c=>c.Groups[0].DesktopVisible=true,hidden.Contains,p=>{hidden.Add(p);throw new IOException("collect failed");},p=>hidden.Remove(p),_=>saves++,()=>true),"IOException");
+                Equal(hidden.Count,0);Equal(saves,0);Equal(source.Groups[0].DesktopVisible,false);
+            });
+            Test("缺屏释放入口并保留显示意愿与原坐标", () => {
+                var source=Source();source.Groups[0].DesktopVisible=true;var hidden=new HashSet<string>{"a"};
+                var value=NativeDesktopController.VisibilityTransaction(source,[],_=>{},hidden.Contains,p=>hidden.Add(p),p=>hidden.Remove(p),_=>{},()=>true);
+                Equal(hidden.Count,0);Equal(value.Groups[0].DesktopVisible,true);Equal(value.Groups[0].DisplayId,"test");Equal(value.Groups[0].X,source.Groups[0].X);
+            });
+
+            Test("隐藏正常组不重试其他启用组的失败引用", () => {
+                var source=Source();source.Groups[0].DesktopVisible=true;source.Groups[1].DesktopVisible=true;
+                var hidden=new HashSet<string>{"a"};var collects=0;
+                var value=NativeDesktopController.VisibilityTransaction(source,[new DisplayArea("test","test",0,0,1200,800,1,true)],
+                    c=>c.Groups[0].DesktopVisible=false,hidden.Contains,_=>{collects++;throw new IOException("unrelated broken entry");},p=>hidden.Remove(p),_=>{},()=>true);
+                Equal(hidden.Count,0);Equal(collects,0);Equal(value.Groups[0].DesktopVisible,false);Equal(value.Groups[1].DesktopVisible,true);
+            });
             File.WriteAllText(output, JsonSerializer.Serialize(new { Passed = true, Count = passed.Count, Checks = passed,
                 RealDesktopActions = false, RealFileAttributeActions = false }, new JsonSerializerOptions { WriteIndented = true }));
             return 0;

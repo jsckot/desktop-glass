@@ -13,6 +13,7 @@ internal sealed class WidgetHost : IDisposable
     private readonly GroupWidget window;
     private readonly uint explorerPid;
     private readonly long explorerStart;
+    private readonly bool foreground;
     private bool closed;
     internal nint Handle { get; }
     internal nint Parent { get; }
@@ -25,9 +26,9 @@ internal sealed class WidgetHost : IDisposable
     /// <param name="scale">当前显示器 DPI/96；跨 DPI 由调用方重建宿主。</param>
     /// <exception cref="InvalidOperationException">桌面身份、DPI 模式或附加结果不符合约束。</exception>
     /// <exception cref="Win32Exception">本组件的原生定位或裁剪失败。</exception>
-    internal WidgetHost(GroupWidget window, Rect physicalScreenBounds, double radiusDip, double scale)
+    internal WidgetHost(GroupWidget window, Rect physicalScreenBounds, double radiusDip, double scale, bool foreground = false)
     {
-        this.window = window;
+        this.window = window; this.foreground = foreground;
         window.Dispatcher.VerifyAccess();
         try
         {
@@ -44,24 +45,29 @@ internal sealed class WidgetHost : IDisposable
                 throw new InvalidOperationException("组件和 Explorer 的 DPI 模式不一致，已取消附加以避免进程 DPI 状态被重置。");
             var style = (long)Native.GetWindowLongPtr(Handle, -16);
             Marshal.SetLastPInvokeError(0);
-            var previous = SetWindowLongPtrW(Handle, -16, (nint)((style & ~PopupStyle) | ChildStyle));
+            var previous = SetWindowLongPtrW(Handle, -16, (nint)(foreground ? (style & ~ChildStyle) | PopupStyle : (style & ~PopupStyle) | ChildStyle));
             if (previous == 0 && Marshal.GetLastPInvokeError() != 0) throw new Win32Exception(Marshal.GetLastPInvokeError());
             if (!DesktopMatches()) throw new InvalidOperationException("Explorer 已重建，已取消附加。");
-            Native.SetParent(Handle, Parent);
-            if (Native.GetParent(Handle) != Parent) throw new Win32Exception(Marshal.GetLastPInvokeError(), "无法将组件附加到原生桌面。");
+            if (!foreground)
+            {
+                Native.SetParent(Handle, Parent);
+                if (Native.GetParent(Handle) != Parent) throw new Win32Exception(Marshal.GetLastPInvokeError(), "无法将组件附加到原生桌面。");
+            }
             window.Closed += (_, _) => closed = true;
             SetBounds(physicalScreenBounds, radiusDip, scale);
             window.Show();
+            if (foreground) window.SetForegroundMaterial(WindowBackdrop.Enable(window));
             // WPF Show 会同步窗口尺寸；最后再次以物理像素定位，确保子窗口位置不被 DIP 坐标覆盖。
             SetBounds(physicalScreenBounds, radiusDip, scale);
-            if (((long)Native.GetWindowLongPtr(Handle, -16) & (PopupStyle | ChildStyle)) != ChildStyle)
+            if (((long)Native.GetWindowLongPtr(Handle, -16) & (PopupStyle | ChildStyle)) != (foreground ? PopupStyle : ChildStyle))
                 throw new InvalidOperationException("组件窗口样式与原生子窗口契约不符。");
         }
         catch { Close(); throw; }
     }
 
     /// <summary>宿主和原桌面仍属于同一次 Explorer 生命周期时返回 true。</summary>
-    internal bool Alive => !closed && Native.IsWindow(Handle) && Native.GetParent(Handle) == Parent && DesktopMatches();
+    internal bool Alive => !closed && Native.IsWindow(Handle) && DesktopMatches() &&
+        (foreground ? ((long)Native.GetWindowLongPtr(Handle, -16) & ChildStyle) == 0 : Native.GetParent(Handle) == Parent);
 
     /// <summary>以物理屏幕坐标定位自己的组件，并同步 WPF 尺寸和原生圆角。</summary>
     /// <param name="physicalScreenBounds">虚拟桌面物理像素矩形；宽高必须为正且有限。</param>
@@ -77,10 +83,10 @@ internal sealed class WidgetHost : IDisposable
         var width = checked((int)Math.Round(physicalScreenBounds.Width));
         var height = checked((int)Math.Round(physicalScreenBounds.Height));
         var point = new Native.Point { X = checked((int)Math.Round(physicalScreenBounds.X)), Y = checked((int)Math.Round(physicalScreenBounds.Y)) };
-        if (!Native.ScreenToClient(Parent, ref point)) throw new Win32Exception(Marshal.GetLastPInvokeError(), "屏幕坐标转换失败。");
+        if (!foreground && !Native.ScreenToClient(Parent, ref point)) throw new Win32Exception(Marshal.GetLastPInvokeError(), "屏幕坐标转换失败。");
         window.Width = width / scale; window.Height = height / scale;
         // HWND_TOP=0：明确提升本组件至桌面图标的兄弟层顶端，不使用 SWP_NOZORDER，也不激活窗口。
-        if (!Native.SetWindowPos(Handle, 0, point.X, point.Y, width, height, 0x10 | 0x40 | 0x20))
+        if (!Native.SetWindowPos(Handle, foreground ? -1 : 0, point.X, point.Y, width, height, 0x10 | 0x40 | 0x20))
             throw new Win32Exception(Marshal.GetLastPInvokeError(), "组件定位失败。");
         RoundOwnWindow(Handle, width, height, radiusDip, scale);
         window.UpdateLayout();

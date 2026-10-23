@@ -13,6 +13,7 @@ internal sealed class GroupWidget : Window
     private readonly bool layoutMutable;
     private readonly int entryCount;
     private readonly Border dropHighlight;
+    private readonly WidgetTheme.Material material;
 
     /// <summary>建立一个分组快照；入口或锁定状态变化后由宿主完整重建组件。</summary>
     /// <param name="group">分组外观和 DIP 尺寸；不会由界面直接修改。</param>
@@ -43,16 +44,14 @@ internal sealed class GroupWidget : Window
         var tileTemplate = WidgetTheme.TileTemplate();
         for (var index = 0; index < entries.Count; index++) items.Children.Add(Tile(entries[index], index, catalog, tileTemplate));
         var body = new Grid();
-        body.Children.Add(new ScrollViewer { Content = items, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, PanningMode = PanningMode.VerticalOnly,
-            Padding = new Thickness(0, 4, 0, 0), Focusable = false });
+        var scroll = AppTheme.Scroll(items); scroll.Padding = new Thickness(0, 4, 0, 0); body.Children.Add(scroll);
         if (entries.Count == 0)
         {
             var empty = new StackPanel { VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Center,
                 IsHitTestVisible = false, Margin = new Thickness(0, 0, 0, 10) };
             empty.Children.Add(new TextBlock { Text = "+", FontFamily = new FontFamily("Segoe UI"), FontSize = 33,
                 FontWeight = FontWeights.Light, Foreground = WidgetTheme.SecondaryInk, HorizontalAlignment = HorizontalAlignment.Center });
-            empty.Children.Add(new TextBlock { Text = temporary ? "接回显示器后继续整理" : "将桌面项目拖到这里", FontSize = 12,
+            empty.Children.Add(new TextBlock { Text = temporary ? "接回显示器后继续整理" : "拖入快捷方式或文件", FontSize = 12,
                 Foreground = WidgetTheme.SecondaryInk, Margin = new Thickness(0, 7, 0, 0), TextAlignment = TextAlignment.Center });
             body.Children.Add(empty);
         }
@@ -62,18 +61,21 @@ internal sealed class GroupWidget : Window
             BorderThickness = new Thickness(1.5), BorderBrush = WidgetTheme.Focus, Background = new SolidColorBrush(Color.FromArgb(20, 255, 255, 255)),
             IsHitTestVisible = false, Visibility = Visibility.Collapsed };
         layers.Children.Add(dropHighlight); layers.Children.Add(ResizeGrip());
-        Content = WidgetTheme.Surface(group, display, layers); ContextMenu = GroupMenu(locked); AllowDrop = !temporary;
+        material = WidgetTheme.CreateMaterial(group, display, layers); Content = material.Root; ContextMenu = GroupMenu(locked); AllowDrop = !temporary;
         DragOver += (_, e) => ShowDrop(e);
         DragLeave += (_, _) => dropHighlight.Visibility = Visibility.Collapsed;
         Drop += (_, e) => ReceiveDrop(e, entryCount);
     }
+
+    /// <summary>顶层浮动时切换为系统实时材质；系统不可用时使用中性色底，不伪装为壁纸透视。</summary>
+    internal void SetForegroundMaterial(WindowBackdrop.Result result) => material.SetForeground(result.Enabled);
 
     private Grid Header(Group group, bool locked)
     {
         var header = new Grid(); header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(36) });
         var labels = new StackPanel { VerticalAlignment = VerticalAlignment.Center, IsHitTestVisible = false };
-        labels.Children.Add(new TextBlock { Text = group.Name, FontSize = 16, FontWeight = FontWeights.SemiBold,
+        labels.Children.Add(new TextBlock { Text = group.Name, FontSize = 14, FontWeight = FontWeights.SemiBold,
             Foreground = WidgetTheme.Ink, TextTrimming = TextTrimming.CharacterEllipsis, Margin = new Thickness(1, 0, 8, 2) });
         labels.Children.Add(new TextBlock { Text = temporary ? "显示器暂离" : entryCount + " 个项目" + (locked ? " · 布局已锁定" : ""),
             FontSize = 10.5, Foreground = WidgetTheme.SecondaryInk, Margin = new Thickness(1, 0, 0, 0) });
