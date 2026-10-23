@@ -1,10 +1,10 @@
-# Desktop Glass 0.4.0
+# Desktop Glass 0.4.1
 
-Windows 原生桌面的玻璃分组工具。本版增加紧凑方块与悬停展开，使用系统合成背景替代静态壁纸采样，统一为轻圆角方形。保留可选目录 EXE 安装、空桌面首启与临时前景模式。范围仍为桌面分组，不包含任务栏或全系统图标替换。
+Windows 原生桌面的玻璃分组工具。0.4.1 修复玻璃层覆盖名称、图标及边框的问题：鼠标移开后保留紧凑方块，进入后展开完整网格，实时玻璃与前景内容分别绘制。保留可选目录 EXE 安装、空桌面首启与临时前景模式。范围仍为桌面分组，不包含任务栏或全系统图标替换。
 
 ## 安装
 
-1. 运行 `DesktopGlass-Setup-0.4.0-x64.exe`。
+1. 运行 `DesktopGlass-Setup-0.4.1-x64.exe`。
 2. 向导默认选择当前用户的 `%LOCALAPPDATA%\Programs\DesktopGlass`，也可选择独立的新目录；已安装时会预填上次目录。
 3. 安装后打开管理面板，桌面不会自动创建示例分组。
 4. 从 0.2 升级时保留原分组与布局，并暂停显示一次；在面板手动选择“显示”或“移到当前屏幕”。
@@ -31,7 +31,7 @@ Windows 原生桌面的玻璃分组工具。本版增加紧凑方块与悬停展
 
 桌面与临时前景组件使用系统 HostBackdrop 合成，反映真实后景；桌面模式仍被普通应用遮挡。系统能力不可用或高对比度时采用中性实色回退，不再采样壁纸。此版不实现物理折射或流体动画。圆角固定为 12 DIP，历史圆角值保留在配置中但不影响当前呈现。应用原图标保持辨识度，程序 Logo、面板、滑杆和滚动条使用统一样式。
 
-本机 Windows 11 26H2 / 26300.9711 x64、2560×1380 工作区、125% 缩放定向验证。本机 Win+D、悬停与普通应用遮挡已由用户确认；真实双屏热插拔、混合 DPI、其他 Windows 11 build 与长期资源指标尚未完成实测；不宣称全版本适配。当前结果及历史记录见 [验收记录](acceptance.md)。
+本机 Windows 11 26H2 / 26300.9711 x64、2560×1380 工作区、125% 缩放定向验证。本修正版已通过实际屏幕合成、原生窗口层级及生命周期检查；物理 Win+D 仍需安装后体验确认。真实双屏热插拔、混合 DPI、其他 Windows 11 build 与长期资源指标尚未完成实测；不宣称全版本适配。当前结果及历史记录见 [验收记录](acceptance.md)。
 
 ## 开发
 
@@ -40,11 +40,12 @@ Windows 原生桌面的玻璃分组工具。本版增加紧凑方块与悬停展
 ```powershell
 ./scripts/Build.ps1 -Dotnet <dotnet.exe 路径> -InnoCompiler <ISCC.exe 路径>
 dotnet run --project tests/DesktopGlass.Tests -c Release
+dotnet run --project tests/DesktopGlass.CompositionTests -c Release -- --output .codex/tmp/composition-tests
 ./tests/Verify-Installer.ps1 -PackageDir <发布目录> -InnoCompiler <ISCC.exe 路径>
 ```
 
-安装器隔离检查不写真实安装登记、快捷方式或用户配置，所有测试负载放在项目 `.codex/`。正式安装包输出到 `.codex/artifacts/DesktopGlass-Setup-0.4.0-x64.exe`。
+安装器隔离检查不写真实安装登记、快捷方式或用户配置，所有测试负载放在项目 `.codex/`。正式安装包输出到 `.codex/artifacts/DesktopGlass-Setup-0.4.1-x64.exe`。
 
-属性租约、控制器、清理、窗口生命周期和渲染另有独立诊断入口。历史全屏路径 `--smoke`、`--crash-test`、`--ui-test` 不作为新版原生桌面验收依据。
+合成回归需要交互式桌面，会短暂显示自有彩色窗口，仅截取测试组件区域，测试期间请不要遮挡该区域。它检验实际屏幕上的文字、图标、边框及模糊，不用 PrintWindow 代替最终合成。属性租约、控制器、清理、窗口生命周期和渲染另有独立诊断入口。历史全屏路径 `--smoke`、`--crash-test`、`--ui-test` 不作为新版原生桌面验收依据。
 
-设计见 [0.3 设计](0.3-design.md)，进度见 [0.4 实施计划](0.4-implementation-plan.md)。
+设计见 [0.3 设计](0.3-design.md)，本次修复见 [0.4.1 实施计划](0.4.1-implementation-plan.md)。紧凑入口的交互参考 [DeskBox](https://github.com/Tianyu199509/DeskBox)，未复制其源码。

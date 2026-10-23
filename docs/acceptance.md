@@ -1,4 +1,43 @@
-# Desktop Glass 0.4.0 体验版验收记录
+# Desktop Glass 0.4.1 体验版验收记录
+
+日期：2026-10-24。基线 `97661a3`，分支 `feat/desktop-groups-mvp`。用户明确反馈“名称、图标和边框都消失，移回原位置才出现”。本次修复玻璃合成覆盖前景的根因；未改文件属性租约、安装权限或工作区格式。
+
+## 0.4.1 根因与验证
+
+旧实现将全幅 HostBackdrop visual 挂到 WPF 本身的 HWND；在实际屏幕上只剩背景，WPF 名称和图标被覆盖。关闭该 visual 或将其透明度设为零后前景立即出现。此前 API 成功、HWND Visible、PrintWindow 及简单样例的人工确认不足以覆盖生产分组，不能继续将 0.4 的材质记录视作无缺陷证明。
+
+本版将背景放到专用、无 owner/parent、禁输入且不激活的自有 HWND，前景继续由原 WPF HWND 绘制。背景随前景的物理位置、裁剪、Z 序、隐藏和关闭同步。不注入 Explorer，不截图模拟玻璃，不新增持续轮询。
+
+参考 [DeskBox 的常驻紧凑层](https://github.com/Tianyu199509/DeskBox/blob/1fdf0bd9f84affe889318173a7f3141843c79604/src/DeskBox/Controls/WidgetShell.xaml.cs#L4512) 的交互约束，未复制其 GPL 源码。DeskBox 本身折叠使用同一窗口；本项目的背景隔离是解决 WPF 合成限制，不能混称为照搬其架构。
+
+| 项目 | 证据和结论 |
+| --- | --- |
+| 失败复现 | `red/result.json`，旧生产组件首次紧凑状态标题墨色像素为 0，退出 1；原型的 sprite 零透明度、禁用材质及隔离背景对照定位覆盖关系 |
+| 最终屏幕合成 | `final-composition/result.json`，46 项通过，退出 0；同一正式回归 `release-composition/result.json` 在与交付一致的 .NET/WPF 10.0.13 自包含运行库再次 46 项通过 |
+| 真实像素 | 连续展开/收起、失活、移动、Hide/Show、恢复后标题和边框均可见；四个自建 ICO 经真实 Shell 图标接口加载，展开后收起仍有四图；彩块边界总差 78、最大相邻差 3，背景改色实时响应 |
+| 双层生命周期 | 默认桌面双组件互不干扰、背景紧邻对应前景且非 Topmost，辅助层单独隐藏后恢复，主动 Hide 不复活、原生非激活最小化成对恢复，关闭释放对应背景，最后共享钩子归零 |
+| 层级回归 | `desktop-layer-verified.json`，22 项通过，包含普通非置顶应用顺序；合成测试的彩色背景为 Topmost，二者证据范围分别记录 |
+| 外观与交互 | `appearance-verified.json` 12 项、`layout-lifecycle-verified.json` 5 项、`hover-verified.json` 6 项（keyboard-only）、`controller-verified.json` 17 项通过 |
+| 构建与领域 | `build.log`：领域 18 项通过，自包含发布与 Inno 编译成功；Release 编译 0 警告、0 错误 |
+| 安装卸载 | `installer.log`，9 项通过；沙箱 `installer-26b5423086584aa4a5dc11d63b6ddee9`，不写真实安装登记、开始菜单或用户配置 |
+| 独立审查 | `collapse_investigation` 未参与实现，独立只读核验生产差异、红绿像素证据及生命周期，核心与诊断增量通过，无剩余必修 P1/P2 |
+
+以上证据相对项目 `.codex/tmp/0.4.1/`，安装沙箱位于项目 `.codex/tmp/`。自建图标仅位于该证据目录，未收纳真实桌面项目或修改 Windows 设置。
+
+诊断输入纠正：旧 `desktop-layer` 检查使用 `SW_MINIMIZE=6`，它按 Win32 契约主动激活下一窗口，与“不抢前台”断言冲突。`layer-focus-trace.json` 证明前台恰在该调用时从外部进程转为自有测试窗，后续恢复未改变前台。改用 `SW_SHOWMINNOACTIVE=7` 后保留全部 22 个断言和阶段 trace，各阶段前台保持原进程；未删除校验或改变产品恢复逻辑。
+
+仍未实测：本修正版的物理 Win+D 人工验收、真实外屏热插拔/混合 DPI、睡眠恢复、长时资源占用及其他 Windows 11 build。中途合成资源构造失败仅静态审查清理分支，未进行故障注入；系统高对比度/透明度策略切换仍需后续真机覆盖。
+
+## 0.4.1 交付
+
+- `.codex/artifacts/DesktopGlass-Setup-0.4.1-x64.exe`，57,702,929 字节，约 55.0 MiB。
+- SHA256：`EA8E70BC0F69672A1710F3BA0BBA71D37F5C2BBA66EDAC775442240240CC728E`。
+- 自包含目录 `.codex/artifacts/desktop-glass-0.4.1-win-x64/`，文件版本 `0.4.1.0`，.NET/WindowsDesktop `10.0.13`。
+- 只做本地提交，不 push、PR 或合并；保留用户 `tests/Verify-Windows.ps1` 原有未提交状态。
+
+---
+
+# Desktop Glass 0.4.0 历史体验版验收记录
 
 日期：2026-10-23。基线 `a26b8d3`，分支 `feat/desktop-groups-mvp`。本版回应真实背景玻璃、紧凑方块与悬停展开反馈；固定 12 DIP 轻圆角，移除圆角滑块。未改桌面文件属性租约和工作区格式。
 
