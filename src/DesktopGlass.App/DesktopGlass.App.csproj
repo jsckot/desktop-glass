@@ -2,7 +2,7 @@
   <PropertyGroup>
     <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
-    <AssemblyName>DesktopGlass</AssemblyName><Version>0.3.0</Version>
+    <AssemblyName>DesktopGlass</AssemblyName><Version>0.3.1</Version>
     <ApplicationIcon>../../assets/desktop-glass.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest><StartupObject>DesktopGlass.App.Program</StartupObject>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <ImplicitUsings>disable</ImplicitUsings>

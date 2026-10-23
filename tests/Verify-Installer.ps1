@@ -1,7 +1,7 @@
 param([string]$PackageDir,[string]$InnoCompiler)
 $ErrorActionPreference='Stop'
 $project=Split-Path $PSScriptRoot -Parent
-if(-not $PackageDir){$PackageDir=Join-Path $project '.codex/artifacts/desktop-glass-0.3.0-win-x64'}
+if(-not $PackageDir){$PackageDir=Join-Path $project '.codex/artifacts/desktop-glass-0.3.1-win-x64'}
 if(-not $InnoCompiler){$InnoCompiler=Join-Path $project '.codex/tools/inno-6.7.3/ISCC.exe'}
 $work=Join-Path $project ('.codex/tmp/installer-'+[Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $work | Out-Null
@@ -26,7 +26,7 @@ function Uninstall([string]$Name,[string]$Location){
 try {
     & $InnoCompiler ("/DPackageDir="+$PackageDir) ("/DOutputDir="+$work) ("/DSandboxData="+$data) (Join-Path $project 'installer/DesktopGlass.iss') *> (Join-Path $work 'compile.log')
     Check ($LASTEXITCODE -eq 0) '隔离安装器编译失败'
-    $setup=Join-Path $work 'DesktopGlass-Setup-0.3.0-x64-sandbox.exe'
+    $setup=Join-Path $work 'DesktopGlass-Setup-0.3.1-x64-sandbox.exe'
     Check ((Setup 'custom-install' $target) -eq 0) '中文空格目录安装失败'
     Check ((Test-Path (Join-Path $target 'DesktopGlass.exe')) -and -not(Test-Path (Join-Path $target '.maintenance'))) '安装负载或维护标记错误'
     $results.Add('自选中文空格目录安装')

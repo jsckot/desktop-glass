@@ -1,4 +1,4 @@
-﻿; Desktop Glass 0.3 - 用户级安装，文件恢复通过主程序无界面维护入口完成
+; Desktop Glass 0.3 - 用户级安装，文件恢复通过主程序无界面维护入口完成
 #ifndef PackageDir
   #error PackageDir must point to the self-contained published folder
 #endif
@@ -14,7 +14,7 @@ CreateUninstallRegKey=no
 AppId=DesktopGlass
 #endif
 AppName=Desktop Glass
-AppVersion=0.3.0
+AppVersion=0.3.1
 AppPublisher=Desktop Glass
 DefaultDirName={code:DefaultLocation}
 DisableDirPage=no
@@ -26,9 +26,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.22000
 OutputDir={#OutputDir}
 #ifdef SandboxData
-OutputBaseFilename=DesktopGlass-Setup-0.3.0-x64-sandbox
+OutputBaseFilename=DesktopGlass-Setup-0.3.1-x64-sandbox
 #else
-OutputBaseFilename=DesktopGlass-Setup-0.3.0-x64
+OutputBaseFilename=DesktopGlass-Setup-0.3.1-x64
 #endif
 SetupIconFile=..\assets\desktop-glass.ico
 UninstallDisplayIcon={app}\DesktopGlass.exe
